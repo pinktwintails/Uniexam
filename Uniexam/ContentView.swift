@@ -151,6 +151,35 @@ struct ExamEvent: Identifiable, Hashable {
     var kind: EventKind
     var date: Date?
     var title: String
+
+    var compactCalendarTitle: String {
+        "\(kind.shortTitle) \(schoolName.replacingOccurrences(of: "大学", with: ""))"
+    }
+}
+
+struct CalendarApplicationRange: Identifiable, Hashable {
+    var id = UUID()
+    var schoolID: UUID
+    var schoolName: String
+    var schoolColor: SchoolColor
+    var startDate: Date
+    var endDate: Date
+    var lane: Int = 0
+
+    func contains(_ date: Date, calendar: Calendar) -> Bool {
+        let day = calendar.startOfDay(for: date)
+        let start = calendar.startOfDay(for: startDate)
+        let end = calendar.startOfDay(for: endDate)
+        return day >= start && day <= end
+    }
+
+    func isStart(_ date: Date, calendar: Calendar) -> Bool {
+        calendar.isDate(date, inSameDayAs: startDate)
+    }
+
+    func isEnd(_ date: Date, calendar: Calendar) -> Bool {
+        calendar.isDate(date, inSameDayAs: endDate)
+    }
 }
 
 enum EventKind: String, CaseIterable, Identifiable, Codable {
@@ -172,6 +201,19 @@ enum EventKind: String, CaseIterable, Identifiable, Codable {
         case .paymentDeadline, .admissionFee, .tuition: "yensign.circle"
         case .exam: "pencil.and.list.clipboard"
         case .result: "flag"
+        }
+    }
+
+    var shortTitle: String {
+        switch self {
+        case .all: "予定"
+        case .applicationStart: "出願"
+        case .applicationEnd: "締切"
+        case .paymentDeadline: "入金"
+        case .exam: "入試"
+        case .result: "発表"
+        case .admissionFee: "入学金"
+        case .tuition: "授業料"
         }
     }
 }
@@ -225,8 +267,8 @@ struct AppTopBar: View {
             barButton(systemImage: trailingSystemImage, action: trailingAction)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 14)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
         .background(Color.deepNavy)
     }
 
@@ -259,7 +301,7 @@ struct SchoolListView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                AppTopBar(title: "志望校", subtitle: "一覧", trailingSystemImage: "plus", trailingAction: {
+                AppTopBar(title: "志望校", trailingSystemImage: "plus", trailingAction: {
                     showingAddSheet = true
                 })
 
@@ -613,25 +655,28 @@ struct SubjectEditor: View {
 struct ExamCalendarView: View {
     var schools: [ExamSchool]
     @State private var selectedDate = Date.from(year: 2027, month: 2, day: 6)
+    @State private var displayedMonth = Date.from(year: 2027, month: 2, day: 1)
     @State private var selectedKind: EventKind = .all
     @State private var selectedSchoolID: UUID?
 
     private let calendar = Calendar.current
-    private let monthStart = Date.from(year: 2027, month: 2, day: 1)
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                AppTopBar(title: "カレンダー", subtitle: "2027年2月", trailingSystemImage: "line.3.horizontal.decrease.circle")
+                AppTopBar(title: "カレンダー", trailingSystemImage: "line.3.horizontal.decrease.circle")
 
                 filterBar
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 12) {
                         MonthGridView(
-                            monthStart: monthStart,
+                            monthStart: displayedMonth,
                             selectedDate: $selectedDate,
-                            events: filteredEvents
+                            events: filteredEvents,
+                            applicationRanges: visibleApplicationRanges,
+                            onPreviousMonth: { moveMonth(by: -1) },
+                            onNextMonth: { moveMonth(by: 1) }
                         )
 
                         VStack(alignment: .leading, spacing: 12) {
@@ -659,7 +704,8 @@ struct ExamCalendarView: View {
                         .background(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
-                    .padding(18)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 12)
                 }
                 .background(Color.appBackground)
             }
@@ -704,6 +750,26 @@ struct ExamCalendarView: View {
             }
     }
 
+    private var visibleApplicationRanges: [CalendarApplicationRange] {
+        guard selectedKind == .all || selectedKind == .applicationStart || selectedKind == .applicationEnd else {
+            return []
+        }
+
+        let ranges = schools.compactMap { school -> CalendarApplicationRange? in
+            guard selectedSchoolID == nil || selectedSchoolID == school.id else { return nil }
+            guard let startDate = school.applicationStart, let endDate = school.applicationEnd else { return nil }
+            return CalendarApplicationRange(
+                schoolID: school.id,
+                schoolName: school.name,
+                schoolColor: school.color,
+                startDate: startDate,
+                endDate: endDate
+            )
+        }
+
+        return assignApplicationRangeLanes(to: ranges)
+    }
+
     private func events(on date: Date) -> [ExamEvent] {
         filteredEvents
             .filter { event in
@@ -712,12 +778,44 @@ struct ExamCalendarView: View {
             }
             .sorted { $0.title < $1.title }
     }
+
+    private func moveMonth(by value: Int) {
+        guard let newMonth = calendar.date(byAdding: .month, value: value, to: displayedMonth) else { return }
+        displayedMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: newMonth)) ?? newMonth
+        selectedDate = displayedMonth
+    }
+
+    private func assignApplicationRangeLanes(to ranges: [CalendarApplicationRange]) -> [CalendarApplicationRange] {
+        var laneEndDates: [Date] = []
+
+        return ranges
+            .sorted { $0.startDate < $1.startDate }
+            .map { range in
+                var rangeWithLane = range
+                let laneIndex = laneEndDates.firstIndex { endDate in
+                    calendar.startOfDay(for: endDate) < calendar.startOfDay(for: range.startDate)
+                }
+
+                if let laneIndex {
+                    rangeWithLane.lane = laneIndex
+                    laneEndDates[laneIndex] = range.endDate
+                } else {
+                    rangeWithLane.lane = laneEndDates.count
+                    laneEndDates.append(range.endDate)
+                }
+
+                return rangeWithLane
+            }
+    }
 }
 
 struct MonthGridView: View {
     var monthStart: Date
     @Binding var selectedDate: Date
     var events: [ExamEvent]
+    var applicationRanges: [CalendarApplicationRange]
+    var onPreviousMonth: () -> Void
+    var onNextMonth: () -> Void
 
     private let calendar = Calendar.current
     private let weekdays = ["月", "火", "水", "木", "金", "土", "日"]
@@ -726,23 +824,21 @@ struct MonthGridView: View {
     var body: some View {
         VStack(spacing: 14) {
             HStack {
-                Button {} label: {
+                Button(action: onPreviousMonth) {
                     Image(systemName: "chevron.left")
                 }
-                .disabled(true)
 
                 Spacer()
-                Text("2027年2月")
+                Text(monthStart.formatted(.yearMonth))
                     .font(.title2.weight(.bold))
                 Spacer()
 
-                Button {} label: {
+                Button(action: onNextMonth) {
                     Image(systemName: "chevron.right")
                 }
-                .disabled(true)
             }
 
-            LazyVGrid(columns: columns, spacing: 10) {
+            LazyVGrid(columns: columns, spacing: 0) {
                 ForEach(weekdays, id: \.self) { weekday in
                     Text(weekday)
                         .font(.caption.weight(.semibold))
@@ -756,16 +852,18 @@ struct MonthGridView: View {
                     } label: {
                         CalendarDayCell(
                             date: date,
-                            isCurrentMonth: calendar.component(.month, from: date) == 2,
+                            isCurrentMonth: calendar.isDate(date, equalTo: monthStart, toGranularity: .month),
                             isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
-                            events: eventsForDay(date)
+                            events: eventsForDay(date),
+                            applicationRanges: applicationRangesForDay(date)
                         )
                     }
                     .buttonStyle(.plain)
                 }
             }
         }
-        .padding(16)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 12)
         .background(.white)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
@@ -774,14 +872,19 @@ struct MonthGridView: View {
         let firstWeekday = calendar.component(.weekday, from: monthStart)
         let mondayBasedOffset = (firstWeekday + 5) % 7
         let gridStart = calendar.date(byAdding: .day, value: -mondayBasedOffset, to: monthStart) ?? monthStart
-        return (0..<35).compactMap { calendar.date(byAdding: .day, value: $0, to: gridStart) }
+        return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: gridStart) }
     }
 
     private func eventsForDay(_ date: Date) -> [ExamEvent] {
         events.filter { event in
             guard let eventDate = event.date else { return false }
+            guard event.kind != .applicationStart && event.kind != .applicationEnd else { return false }
             return calendar.isDate(eventDate, inSameDayAs: date)
         }
+    }
+
+    private func applicationRangesForDay(_ date: Date) -> [CalendarApplicationRange] {
+        applicationRanges.filter { $0.contains(date, calendar: calendar) }
     }
 }
 
@@ -790,25 +893,133 @@ struct CalendarDayCell: View {
     var isCurrentMonth: Bool
     var isSelected: Bool
     var events: [ExamEvent]
+    var applicationRanges: [CalendarApplicationRange]
+
+    private var cellBackground: Color {
+        let hasExam = events.contains { $0.kind == .exam }
+        let hasResult = events.contains { $0.kind == .result }
+
+        switch (hasExam, hasResult) {
+        case (true, true):
+            return Color.schoolTeal.opacity(0.20)
+        case (true, false):
+            return Color.clearBlue.opacity(0.24)
+        case (false, true):
+            return Color.schoolMint.opacity(0.24)
+        case (false, false):
+            return isSelected ? Color.uniexamIndigo.opacity(0.08) : Color.clear
+        }
+    }
+
+    private var borderColor: Color {
+        if isSelected {
+            return Color.uniexamIndigo.opacity(0.34)
+        }
+
+        if events.contains(where: { $0.kind == .exam || $0.kind == .result }) {
+            return Color.uniexamIndigo.opacity(0.16)
+        }
+
+        return Color.secondaryText.opacity(0.08)
+    }
+
+    private var visibleRangeLaneCount: Int {
+        min((applicationRanges.map(\.lane).max() ?? -1) + 1, 2)
+    }
 
     var body: some View {
-        VStack(spacing: 5) {
-            Text("\(Calendar.current.component(.day, from: date))")
-                .font(.body.weight(isSelected ? .bold : .regular))
-                .foregroundStyle(isSelected ? .white : (isCurrentMonth ? .primaryText : .secondaryText.opacity(0.45)))
-                .frame(width: 34, height: 34)
-                .background(isSelected ? Color.uniexamIndigo : Color.clear, in: Circle())
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("\(Calendar.current.component(.day, from: date))")
+                    .font(.caption.weight(isSelected ? .bold : .semibold))
+                    .foregroundStyle(isSelected ? .white : (isCurrentMonth ? Color.primaryText : Color.secondaryText.opacity(0.45)))
+                    .frame(width: 24, height: 24)
+                    .background(isSelected ? Color.uniexamIndigo : Color.clear, in: Circle())
+                Spacer(minLength: 0)
+            }
 
-            HStack(spacing: 3) {
-                ForEach(events.prefix(3)) { event in
-                    Circle()
-                        .fill(event.schoolColor.color)
-                        .frame(width: 5, height: 5)
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(events.prefix(2)) { event in
+                    Text(event.compactCalendarTitle)
+                        .font(.system(size: 8.5, weight: .bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .foregroundStyle(event.schoolColor.color)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(event.schoolColor.color.opacity(0.15), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                }
+
+                let hiddenCount = max(applicationRanges.count - visibleRangeLaneCount, 0) + max(events.count - 2, 0)
+                if hiddenCount > 0 {
+                    Text("+\(hiddenCount)")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(Color.secondaryText)
+                        .padding(.horizontal, 4)
+                }
+
+                Spacer(minLength: 0)
+
+                ForEach(0..<visibleRangeLaneCount, id: \.self) { lane in
+                    if let range = applicationRanges.first(where: { $0.lane == lane }) {
+                        ApplicationRangeRibbon(range: range, date: date)
+                    } else {
+                        Color.clear
+                            .frame(height: 7)
+                    }
                 }
             }
-            .frame(height: 6)
         }
-        .frame(height: 48)
+        .padding(.horizontal, 2)
+        .padding(.vertical, 4)
+        .frame(height: 76)
+        .background {
+            cellBackground
+            Rectangle()
+                .stroke(borderColor, lineWidth: 0.7)
+        }
+    }
+}
+
+struct ApplicationRangeRibbon: View {
+    var range: CalendarApplicationRange
+    var date: Date
+
+    private let calendar = Calendar.current
+
+    var body: some View {
+        ZStack {
+            HStack(spacing: 0) {
+                if range.isStart(date, calendar: calendar) {
+                    Image(systemName: "arrowtriangle.left.fill")
+                        .font(.system(size: 4.5, weight: .bold))
+                }
+
+                Rectangle()
+                    .frame(height: 1.5)
+
+                if range.isEnd(date, calendar: calendar) {
+                    Image(systemName: "arrowtriangle.right.fill")
+                        .font(.system(size: 4.5, weight: .bold))
+                }
+            }
+            .foregroundStyle(range.schoolColor.color)
+
+            if range.isStart(date, calendar: calendar) || range.isEnd(date, calendar: calendar) {
+                Text(range.isStart(date, calendar: calendar) ? "出願" : "締切")
+                    .font(.system(size: 6, weight: .bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .foregroundStyle(range.schoolColor.color)
+                    .padding(.horizontal, 2)
+                    .background(.white.opacity(0.82), in: Capsule())
+            }
+        }
+        .padding(.horizontal, -2)
+        .frame(height: 7)
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel("\(range.schoolName) 出願期間")
     }
 }
 
@@ -1413,6 +1624,13 @@ extension FormatStyle where Self == Date.FormatStyle {
         Date.FormatStyle()
             .month(.defaultDigits)
             .day(.defaultDigits)
+            .locale(Locale(identifier: "ja_JP"))
+    }
+
+    static var yearMonth: Date.FormatStyle {
+        Date.FormatStyle()
+            .year(.defaultDigits)
+            .month(.wide)
             .locale(Locale(identifier: "ja_JP"))
     }
 }
