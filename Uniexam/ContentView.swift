@@ -78,8 +78,7 @@ struct ExamSchool: Identifiable, Hashable, Codable {
     var filledDetailItems: [DetailItem] {
         var items: [DetailItem] = []
         appendDate("入試日程", examDate, "calendar", &items)
-        appendDate("出願開始", applicationStart, "doc.text", &items)
-        appendDate("出願締切", applicationEnd, "doc.text.fill", &items)
+        appendApplicationPeriod(&items)
         appendDate("入金締切", paymentDeadline, "yensign.circle", &items)
         appendText("出願に必要な書類", requiredDocuments, "folder", &items)
         appendDate("合格発表日", resultDate, "flag", &items)
@@ -115,6 +114,18 @@ struct ExamSchool: Identifiable, Hashable, Codable {
         items.append(DetailItem(title: title, value: date.formatted(.examDate), systemImage: image))
     }
 
+    private func appendApplicationPeriod(_ items: inout [DetailItem]) {
+        guard applicationStart != nil || applicationEnd != nil else { return }
+        items.append(
+            DetailItem(
+                title: "出願期間",
+                value: Date.applicationPeriodText(start: applicationStart, end: applicationEnd),
+                systemImage: "arrow.left.and.right",
+                badge: Date.applicationPeriodDaysText(start: applicationStart, end: applicationEnd)
+            )
+        )
+    }
+
     private func appendText(_ title: String, _ value: String, _ image: String, _ items: inout [DetailItem]) {
         guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         items.append(DetailItem(title: title, value: value, systemImage: image))
@@ -137,10 +148,20 @@ struct SubjectScore: Identifiable, Hashable, Codable {
 }
 
 struct DetailItem: Identifiable {
-    var id = UUID()
     var title: String
     var value: String
     var systemImage: String
+    var badge: String? = nil
+
+    var id: String { title }
+}
+
+struct SchoolDetailSection: Identifiable {
+    var title: String
+    var systemImage: String
+    var items: [DetailItem]
+
+    var id: String { title }
 }
 
 struct ExamEvent: Identifiable, Hashable {
@@ -220,22 +241,80 @@ enum EventKind: String, CaseIterable, Identifiable, Codable {
 
 enum SchoolColor: String, CaseIterable, Identifiable, Codable {
     case blue
-    case coral
-    case teal
+    case deepBlue
+    case rosePink
+    case brightRed
+    case purple
     case violet
-    case amber
     case mint
+    case teal
+    case limeGreen
+    case amber
+    case orange
+    case coral
+    case skyBlue
+    case turquoise
+    case slate
 
     var id: String { rawValue }
 
     var color: Color {
         switch self {
         case .blue: .schoolBlue
-        case .coral: .schoolCoral
-        case .teal: .schoolTeal
+        case .deepBlue: .schoolDeepBlue
+        case .rosePink: .schoolRosePink
+        case .brightRed: .schoolBrightRed
+        case .purple: .schoolPurple
         case .violet: .schoolViolet
-        case .amber: .schoolAmber
         case .mint: .schoolMint
+        case .teal: .schoolTeal
+        case .limeGreen: .schoolLimeGreen
+        case .amber: .schoolAmber
+        case .orange: .schoolOrange
+        case .coral: .schoolCoral
+        case .skyBlue: .schoolSkyBlue
+        case .turquoise: .schoolTurquoise
+        case .slate: .schoolSlate
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .blue: "ロイヤルブルー"
+        case .deepBlue: "ディープブルー"
+        case .rosePink: "ローズピンク"
+        case .brightRed: "ブライトレッド"
+        case .purple: "パープル"
+        case .violet: "バイオレット"
+        case .mint: "エメラルド"
+        case .teal: "ティール"
+        case .limeGreen: "ライムグリーン"
+        case .amber: "アンバー"
+        case .orange: "オレンジ"
+        case .coral: "コーラル"
+        case .skyBlue: "スカイブルー"
+        case .turquoise: "ターコイズ"
+        case .slate: "スレート"
+        }
+    }
+
+    var hexCode: String {
+        switch self {
+        case .blue: "#6B8FF3"
+        case .deepBlue: "#4E7CE2"
+        case .rosePink: "#F28AAE"
+        case .brightRed: "#FF6B6B"
+        case .purple: "#A78BFA"
+        case .violet: "#B79AF9"
+        case .mint: "#4DCCA1"
+        case .teal: "#40C4C9"
+        case .limeGreen: "#B7D957"
+        case .amber: "#F6C453"
+        case .orange: "#FFB266"
+        case .coral: "#FF8F8F"
+        case .skyBlue: "#7BC0F8"
+        case .turquoise: "#5ED6E0"
+        case .slate: "#A6B2C7"
         }
     }
 }
@@ -418,52 +497,56 @@ struct SchoolDetailView: View {
             )
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(alignment: .top, spacing: 14) {
-                            SchoolMonogram(school: school)
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(school.name)
-                                    .font(.title2.weight(.bold))
-                                Text("\(school.faculty.isEmpty ? "学部未入力" : school.faculty) / \(school.method)")
-                                    .foregroundStyle(Color.secondaryText)
-                                Text("偏差値 \(school.deviationText)")
-                                    .font(.headline)
-                                    .foregroundStyle(school.color.color)
-                            }
-                            Spacer()
-                        }
-                    }
-                    .padding(18)
-                    .background(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    SchoolDetailSummary(school: school)
 
-                    VStack(alignment: .leading, spacing: 0) {
+                    if let nextEvent {
+                        NextExamEventBanner(event: nextEvent, tint: school.color.color)
+                    }
+
+                    HStack {
                         Text("登録済み情報")
-                            .font(.headline)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 16)
-                            .padding(.bottom, 8)
-
-                        ForEach(school.filledDetailItems) { item in
-                            DetailInfoRow(item: item, tint: school.color.color)
-                            if item.id != school.filledDetailItems.last?.id {
-                                Divider()
-                                    .padding(.leading, 52)
-                            }
-                        }
-
-                        if school.filledDetailItems.isEmpty {
-                            Text("任意項目はまだ入力されていません。")
-                                .font(.subheadline)
-                                .foregroundStyle(Color.secondaryText)
-                                .padding(16)
-                        }
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(Color.primaryText)
+                        Spacer()
+                        Text("\(registeredItemCount)項目")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.secondaryText)
                     }
-                    .background(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .padding(.top, 4)
+
+                    ForEach(detailSections) { section in
+                        SchoolDetailSectionCard(section: section, tint: school.color.color)
+                    }
+
+                    if detailSections.isEmpty {
+                        Button {
+                            showingEditSheet = true
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.title3)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("詳しい情報を追加")
+                                        .font(.subheadline.weight(.bold))
+                                    Text("日程や出願情報を登録すると、ここに整理して表示されます")
+                                        .font(.caption)
+                                        .foregroundStyle(Color.secondaryText)
+                                        .multilineTextAlignment(.leading)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.bold))
+                            }
+                            .foregroundStyle(school.color.color)
+                            .padding(16)
+                            .background(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .padding(18)
+                .padding(16)
             }
             .background(Color.appBackground)
         }
@@ -474,6 +557,89 @@ struct SchoolDetailView: View {
             }
         }
     }
+
+    private var nextEvent: ExamEvent? {
+        school.events
+            .filter { ($0.date ?? .distantPast) >= .demoToday }
+            .sorted { ($0.date ?? .distantFuture) < ($1.date ?? .distantFuture) }
+            .first
+    }
+
+    private var registeredItemCount: Int {
+        detailSections.reduce(0) { $0 + $1.items.count }
+    }
+
+    private var detailSections: [SchoolDetailSection] {
+        [
+            SchoolDetailSection(title: "日程", systemImage: "calendar", items: scheduleItems),
+            SchoolDetailSection(title: "出願情報", systemImage: "doc.text.fill", items: applicationItems),
+            SchoolDetailSection(title: "試験情報", systemImage: "pencil.and.list.clipboard", items: examItems),
+            SchoolDetailSection(title: "メモ", systemImage: "note.text", items: noteItems)
+        ].filter { !$0.items.isEmpty }
+    }
+
+    private var scheduleItems: [DetailItem] {
+        [
+            dateItem("入試日程", school.examDate, "pencil.and.list.clipboard"),
+            applicationPeriodItem,
+            dateItem("入金締切", school.paymentDeadline, "yensign.circle"),
+            dateItem("合格発表日", school.resultDate, "flag.fill"),
+            dateItem("入学金締切", school.admissionFeeDeadline, "graduationcap.fill"),
+            dateItem("授業料締切", school.tuitionDeadline, "creditcard.fill")
+        ].compactMap { $0 }
+    }
+
+    private var applicationPeriodItem: DetailItem? {
+        guard school.applicationStart != nil || school.applicationEnd != nil else { return nil }
+        return DetailItem(
+            title: "出願期間",
+            value: Date.applicationPeriodText(start: school.applicationStart, end: school.applicationEnd),
+            systemImage: "arrow.left.and.right",
+            badge: Date.applicationPeriodDaysText(start: school.applicationStart, end: school.applicationEnd)
+        )
+    }
+
+    private var applicationItems: [DetailItem] {
+        [
+            textItem("必要書類", school.requiredDocuments, "folder.fill"),
+            textItem("募集要項", school.guidelineURL, "link"),
+            textItem("パスナビ", school.passnaviURL, "link"),
+            textItem("出願サイト", school.applicationURL, "link")
+        ].compactMap { $0 }
+    }
+
+    private var examItems: [DetailItem] {
+        var items: [DetailItem] = []
+        if !school.subjects.isEmpty {
+            items.append(
+                DetailItem(
+                    title: "科目・配点",
+                    value: school.subjects.map(\.displayText).joined(separator: " / "),
+                    systemImage: "book.closed.fill"
+                )
+            )
+        }
+        items.append(contentsOf: [
+            textItem("合格者最低点", school.minimumPassingScore, "target"),
+            textItem("倍率", school.acceptanceRatio, "chart.bar.fill"),
+            textItem("募集人数", school.capacity, "person.3.fill")
+        ].compactMap { $0 })
+        return items
+    }
+
+    private var noteItems: [DetailItem] {
+        [textItem("メモ", school.memo, "square.and.pencil")].compactMap { $0 }
+    }
+
+    private func dateItem(_ title: String, _ date: Date?, _ systemImage: String) -> DetailItem? {
+        guard let date else { return nil }
+        return DetailItem(title: title, value: date.formatted(.examDate), systemImage: systemImage)
+    }
+
+    private func textItem(_ title: String, _ value: String, _ systemImage: String) -> DetailItem? {
+        guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return DetailItem(title: title, value: value, systemImage: systemImage)
+    }
 }
 
 struct DetailInfoRow: View {
@@ -483,22 +649,163 @@ struct DetailInfoRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: item.systemImage)
-                .font(.body.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(tint)
-                .frame(width: 24)
+                .frame(width: 32, height: 32)
+                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.title)
-                    .font(.caption)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.secondaryText)
-                Text(item.value)
-                    .font(.subheadline)
-                    .foregroundStyle(Color.primaryText)
-                    .textSelection(.enabled)
+
+                if item.systemImage == "link", let url = URL(string: item.value) {
+                    Link(destination: url) {
+                        HStack(spacing: 5) {
+                            Text(item.value)
+                                .lineLimit(1)
+                            Image(systemName: "arrow.up.right")
+                                .font(.caption2.weight(.bold))
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(tint)
+                    }
+                } else {
+                    Text(item.value)
+                        .font(.subheadline.weight(item.title.contains("締切") || item.title == "入試日程" || item.title == "出願期間" ? .semibold : .regular))
+                        .foregroundStyle(Color.primaryText)
+                        .textSelection(.enabled)
+                }
             }
             Spacer(minLength: 0)
+
+            if let badge = item.badge {
+                Text(badge)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(tint)
+                    .monospacedDigit()
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(tint.opacity(0.13), in: RoundedRectangle(cornerRadius: 6))
+            }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 11)
+    }
+}
+
+struct SchoolDetailSummary: View {
+    var school: ExamSchool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(school.color.color)
+                .frame(height: 5)
+
+            HStack(alignment: .top, spacing: 14) {
+                SchoolMonogram(school: school)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(school.name)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(Color.primaryText)
+                    Text(school.faculty)
+                        .font(.subheadline)
+                        .foregroundStyle(Color.secondaryText)
+                    Label(school.method, systemImage: "list.clipboard")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.primaryText)
+                }
+
+                Spacer(minLength: 8)
+
+                VStack(spacing: 2) {
+                    Text("偏差値")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Color.secondaryText)
+                    Text(school.deviationText)
+                        .font(.title3.weight(.bold))
+                        .monospacedDigit()
+                        .foregroundStyle(school.color.color)
+                }
+                .padding(.horizontal, 11)
+                .padding(.vertical, 8)
+                .background(school.color.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+            }
+            .padding(16)
+        }
+        .background(.white)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+struct NextExamEventBanner: View {
+    var event: ExamEvent
+    var tint: Color
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: event.kind.icon)
+                .font(.headline)
+                .foregroundStyle(tint)
+                .frame(width: 38, height: 38)
+                .background(.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 7))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("次の予定")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.secondaryText)
+                Text(event.title)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(Color.primaryText)
+            }
+
+            Spacer()
+
+            Text(event.date?.formatted(.monthDayWeekday) ?? "-")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(Color.primaryText)
+        }
+        .padding(14)
+        .background(tint.opacity(0.14))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+struct SchoolDetailSectionCard: View {
+    var section: SchoolDetailSection
+    var tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 9) {
+                Image(systemName: section.systemImage)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(tint)
+                Text(section.title)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(Color.primaryText)
+                Spacer()
+                Text("\(section.items.count)項目")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Color.secondaryText)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
+
+            Divider()
+
+            ForEach(section.items) { item in
+                DetailInfoRow(item: item, tint: tint)
+                if item.id != section.items.last?.id {
+                    Divider()
+                        .padding(.leading, 60)
+                }
+            }
+        }
+        .background(.white)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -508,71 +815,172 @@ struct EditSchoolView: View {
         case edit
     }
 
+    private enum EditorSection: Hashable {
+        case schedule
+        case application
+        case exam
+        case notes
+    }
+
+    private enum FocusedField: Hashable {
+        case name
+        case method
+        case faculty
+    }
+
     @Environment(\.dismiss) private var dismiss
     var mode: Mode
     @State var school: ExamSchool
+    @State private var expandedSections: Set<EditorSection> = []
+    @FocusState private var focusedField: FocusedField?
     var onSave: (ExamSchool) -> Void
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("必須") {
-                    TextField("学校名", text: $school.name)
-                    TextField("方式", text: $school.method)
-                    HStack {
-                        Text("偏差値")
+                Section {
+                    EditorProgressHeader(
+                        completedRequiredCount: completedRequiredCount,
+                        optionalFieldCount: optionalFieldCount,
+                        tint: school.color.color
+                    )
+                    .listRowInsets(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
+                }
+
+                Section {
+                    EditorTextField(
+                        title: "学校名",
+                        placeholder: "例：青葉大学",
+                        systemImage: "building.columns.fill",
+                        text: $school.name,
+                        isRequired: true
+                    )
+                    .focused($focusedField, equals: .name)
+
+                    EditorTextField(
+                        title: "入試方式",
+                        placeholder: "例：一般A・共通テスト利用",
+                        systemImage: "list.clipboard.fill",
+                        text: $school.method,
+                        isRequired: true
+                    )
+                    .focused($focusedField, equals: .method)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            EditorFieldLabel(title: "偏差値", systemImage: "chart.line.uptrend.xyaxis", isRequired: true)
+                            Spacer()
+                            Text(school.deviation, format: .number.precision(.fractionLength(1)))
+                                .font(.headline.weight(.bold))
+                                .monospacedDigit()
+                                .foregroundStyle(Color.deepNavy)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(school.color.color.opacity(0.16), in: RoundedRectangle(cornerRadius: 6))
+                        }
                         Slider(value: $school.deviation, in: 35...80, step: 0.5)
-                        Text(school.deviation, format: .number.precision(.fractionLength(1)))
-                            .monospacedDigit()
+                            .tint(school.color.color)
+                    }
+                    .padding(.vertical, 4)
+
+                    EditorTextField(
+                        title: "学部・学科",
+                        placeholder: "例：経済学部 経済学科",
+                        systemImage: "graduationcap.fill",
+                        text: $school.faculty,
+                        isRequired: true
+                    )
+                    .focused($focusedField, equals: .faculty)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        EditorFieldLabel(title: "大学カラー", systemImage: "paintpalette.fill", isRequired: true)
+                        SchoolColorPicker(selection: $school.color)
+                    }
+                } header: {
+                    Text("必須項目")
+                } footer: {
+                    if completedRequiredCount < 5 {
+                        Label("学校名・入試方式・学部学科を入力すると保存できます", systemImage: "info.circle")
                             .foregroundStyle(Color.secondaryText)
                     }
                 }
 
-                Section("基本情報") {
-                    TextField("学部・学科", text: $school.faculty)
-                    Picker("大学カラー", selection: $school.color) {
-                        ForEach(SchoolColor.allCases) { color in
-                            Text(color.rawValue.capitalized)
-                                .tag(color)
-                        }
-                    }
-                }
-
-                DisclosureGroup("日程") {
+                editorSection(
+                    section: .schedule,
+                    title: "日程",
+                    subtitle: "入試・発表・支払いの期日",
+                    systemImage: "calendar",
+                    completedCount: scheduleCount
+                ) {
                     OptionalDatePicker(title: "入試日程", date: $school.examDate)
-                    OptionalDatePicker(title: "出願開始", date: $school.applicationStart)
-                    OptionalDatePicker(title: "出願締切", date: $school.applicationEnd)
+                    ApplicationPeriodPicker(startDate: $school.applicationStart, endDate: $school.applicationEnd)
                     OptionalDatePicker(title: "入金締切", date: $school.paymentDeadline)
                     OptionalDatePicker(title: "合格発表日", date: $school.resultDate)
                     OptionalDatePicker(title: "入学金締切", date: $school.admissionFeeDeadline)
                     OptionalDatePicker(title: "授業料締切", date: $school.tuitionDeadline)
                 }
 
-                DisclosureGroup("出願情報") {
-                    TextField("出願に必要な書類", text: $school.requiredDocuments, axis: .vertical)
-                    TextField("募集要項URL", text: $school.guidelineURL)
+                editorSection(
+                    section: .application,
+                    title: "出願情報",
+                    subtitle: "必要書類と関連リンク",
+                    systemImage: "doc.text.fill",
+                    completedCount: applicationInformationCount
+                ) {
+                    EditorTextField(
+                        title: "必要書類",
+                        placeholder: "調査書、写真、志望理由書など",
+                        systemImage: "folder.fill",
+                        text: $school.requiredDocuments,
+                        axis: .vertical
+                    )
+                    EditorTextField(title: "募集要項URL", placeholder: "https://", systemImage: "link", text: $school.guidelineURL)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
-                    TextField("パスナビURL", text: $school.passnaviURL)
+                        .autocorrectionDisabled()
+                    EditorTextField(title: "パスナビURL", placeholder: "https://", systemImage: "link", text: $school.passnaviURL)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
-                    TextField("出願サイトURL", text: $school.applicationURL)
+                        .autocorrectionDisabled()
+                    EditorTextField(title: "出願サイトURL", placeholder: "https://", systemImage: "link", text: $school.applicationURL)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                 }
 
-                DisclosureGroup("試験情報") {
+                editorSection(
+                    section: .exam,
+                    title: "試験情報",
+                    subtitle: "科目・配点と過去の実績",
+                    systemImage: "pencil.and.list.clipboard",
+                    completedCount: examInformationCount
+                ) {
                     SubjectEditor(subjects: $school.subjects)
-                    TextField("合格者最低点", text: $school.minimumPassingScore)
-                    TextField("倍率", text: $school.acceptanceRatio)
-                    TextField("募集人数", text: $school.capacity)
+                    EditorTextField(title: "合格者最低点", placeholder: "例：320 / 500", systemImage: "target", text: $school.minimumPassingScore)
+                    EditorTextField(title: "倍率", placeholder: "例：3.2倍", systemImage: "chart.bar.fill", text: $school.acceptanceRatio)
+                    EditorTextField(title: "募集人数", placeholder: "例：80人", systemImage: "person.3.fill", text: $school.capacity)
                 }
 
-                DisclosureGroup("その他") {
-                    TextField("メモ", text: $school.memo, axis: .vertical)
-                        .lineLimit(3...8)
+                editorSection(
+                    section: .notes,
+                    title: "メモ",
+                    subtitle: "気づいたことを自由に記録",
+                    systemImage: "note.text",
+                    completedCount: notesCount
+                ) {
+                    EditorTextField(
+                        title: "メモ",
+                        placeholder: "キャンパス、過去問、対策など",
+                        systemImage: "square.and.pencil",
+                        text: $school.memo,
+                        axis: .vertical
+                    )
                 }
             }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+            .background(Color.appBackground)
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle(mode == .add ? "志望校を追加" : "志望校を編集")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -586,10 +994,116 @@ struct EditSchoolView: View {
                         onSave(school)
                         dismiss()
                     }
-                    .disabled(school.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || school.method.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .fontWeight(.semibold)
+                    .disabled(
+                        school.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || school.method.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || school.faculty.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("完了") {
+                        focusedField = nil
+                    }
+                }
+            }
+            .onAppear {
+                if mode == .add {
+                    focusedField = .name
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func editorSection<Content: View>(
+        section: EditorSection,
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        completedCount: Int,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        Section {
+            DisclosureGroup(isExpanded: expansionBinding(for: section)) {
+                content()
+                    .padding(.top, 8)
+            } label: {
+                EditorSectionHeader(
+                    title: title,
+                    subtitle: subtitle,
+                    systemImage: systemImage,
+                    completedCount: completedCount,
+                    tint: school.color.color
+                )
+            }
+            .tint(Color.secondaryText)
+        }
+    }
+
+    private func expansionBinding(for section: EditorSection) -> Binding<Bool> {
+        Binding(
+            get: { expandedSections.contains(section) },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedSections.insert(section)
+                } else {
+                    expandedSections.remove(section)
+                }
+            }
+        )
+    }
+
+    private var completedRequiredCount: Int {
+        [
+            !school.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            !school.method.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            !school.faculty.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            true,
+            true
+        ].filter { $0 }.count
+    }
+
+    private var scheduleCount: Int {
+        let dateCount = [
+            school.examDate,
+            school.paymentDeadline,
+            school.resultDate,
+            school.admissionFeeDeadline,
+            school.tuitionDeadline
+        ].compactMap { $0 }.count
+        let applicationPeriodCount = school.applicationStart != nil || school.applicationEnd != nil ? 1 : 0
+        return dateCount + applicationPeriodCount
+    }
+
+    private var applicationInformationCount: Int {
+        nonEmptyCount([
+            school.requiredDocuments,
+            school.guidelineURL,
+            school.passnaviURL,
+            school.applicationURL
+        ])
+    }
+
+    private var examInformationCount: Int {
+        (school.subjects.isEmpty ? 0 : 1) + nonEmptyCount([
+            school.minimumPassingScore,
+            school.acceptanceRatio,
+            school.capacity
+        ])
+    }
+
+    private var notesCount: Int {
+        nonEmptyCount([school.memo])
+    }
+
+    private var optionalFieldCount: Int {
+        scheduleCount + applicationInformationCount + examInformationCount + notesCount
+    }
+
+    private func nonEmptyCount(_ values: [String]) -> Int {
+        values.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count
     }
 }
 
@@ -598,23 +1112,134 @@ struct OptionalDatePicker: View {
     @Binding var date: Date?
 
     var body: some View {
-        Toggle(isOn: Binding(
-            get: { date != nil },
-            set: { isOn in date = isOn ? (date ?? .demoToday) : nil }
-        )) {
+        HStack(spacing: 10) {
             Text(title)
-        }
+                .font(.subheadline)
+                .foregroundStyle(Color.primaryText)
+            Spacer(minLength: 8)
 
-        if let unwrappedDate = date {
-            DatePicker(
-                "",
-                selection: Binding(
-                    get: { unwrappedDate },
-                    set: { date = $0 }
-                ),
-                displayedComponents: .date
-            )
-            .datePickerStyle(.compact)
+            if let unwrappedDate = date {
+                DatePicker(
+                    "",
+                    selection: Binding(
+                        get: { unwrappedDate },
+                        set: { date = $0 }
+                    ),
+                    displayedComponents: .date
+                )
+                .labelsHidden()
+                .datePickerStyle(.compact)
+                .environment(\.locale, Locale(identifier: "ja_JP"))
+
+                Button {
+                    date = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Color.secondaryText.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(title)を削除")
+            } else {
+                Button {
+                    date = .demoToday
+                } label: {
+                    Label("追加", systemImage: "plus.circle.fill")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 3)
+    }
+}
+
+struct ApplicationPeriodPicker: View {
+    @Binding var startDate: Date?
+    @Binding var endDate: Date?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Text("出願期間")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.primaryText)
+
+                Spacer(minLength: 8)
+
+                if let daysText = Date.applicationPeriodDaysText(start: startDate, end: endDate) {
+                    Text(daysText)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color.uniexamIndigo)
+                        .monospacedDigit()
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(Color.uniexamIndigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                }
+
+                if startDate == nil && endDate == nil {
+                    Button {
+                        startDate = .demoToday
+                        endDate = Calendar.current.date(byAdding: .day, value: 13, to: .demoToday) ?? .demoToday
+                    } label: {
+                        Label("追加", systemImage: "plus.circle.fill")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button {
+                        startDate = nil
+                        endDate = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(Color.secondaryText.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("出願期間を削除")
+                }
+            }
+
+            if startDate != nil || endDate != nil {
+                VStack(spacing: 8) {
+                    periodDateRow(title: "開始", date: $startDate)
+                    periodDateRow(title: "締切", date: $endDate)
+                }
+                .padding(10)
+                .background(Color.appBackground, in: RoundedRectangle(cornerRadius: 7))
+            }
+        }
+        .padding(.vertical, 3)
+    }
+
+    private func periodDateRow(title: String, date: Binding<Date?>) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.secondaryText)
+                .frame(width: 34, alignment: .leading)
+
+            Spacer(minLength: 8)
+
+            if let unwrappedDate = date.wrappedValue {
+                DatePicker(
+                    "",
+                    selection: Binding(
+                        get: { unwrappedDate },
+                        set: { date.wrappedValue = $0 }
+                    ),
+                    displayedComponents: .date
+                )
+                .labelsHidden()
+                .datePickerStyle(.compact)
+                .environment(\.locale, Locale(identifier: "ja_JP"))
+            } else {
+                Button {
+                    date.wrappedValue = .demoToday
+                } label: {
+                    Label("追加", systemImage: "plus.circle.fill")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 }
@@ -625,21 +1250,37 @@ struct SubjectEditor: View {
     @State private var newScore = ""
 
     var body: some View {
+        EditorFieldLabel(title: "科目ごとの配点", systemImage: "book.closed.fill")
+
         ForEach($subjects) { $subject in
-            HStack {
-                TextField("科目", text: $subject.subject)
+            HStack(spacing: 10) {
+                TextField("科目名", text: $subject.subject)
+                    .textFieldStyle(.roundedBorder)
                 TextField("配点", text: $subject.score)
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 80)
+                Button {
+                    if let index = subjects.firstIndex(where: { $0.id == subject.id }) {
+                        subjects.remove(at: index)
+                    }
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .foregroundStyle(Color.schoolCoral)
+                }
+                .buttonStyle(.plain)
             }
         }
-        .onDelete { subjects.remove(atOffsets: $0) }
 
-        HStack {
+        HStack(spacing: 10) {
             TextField("科目を追加", text: $newSubject)
+                .textFieldStyle(.roundedBorder)
             TextField("配点", text: $newScore)
                 .keyboardType(.numberPad)
                 .multilineTextAlignment(.trailing)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 80)
             Button {
                 subjects.append(SubjectScore(subject: newSubject, score: newScore))
                 newSubject = ""
@@ -649,6 +1290,224 @@ struct SubjectEditor: View {
             }
             .disabled(newSubject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
+    }
+}
+
+struct EditorProgressHeader: View {
+    private let requiredFieldCount = 5
+
+    var completedRequiredCount: Int
+    var optionalFieldCount: Int
+    var tint: Color
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .stroke(tint.opacity(0.18), lineWidth: 5)
+                Circle()
+                    .trim(from: 0, to: CGFloat(completedRequiredCount) / CGFloat(requiredFieldCount))
+                    .stroke(tint, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: completedRequiredCount == requiredFieldCount ? "checkmark" : "pencil")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(tint)
+            }
+            .frame(width: 48, height: 48)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(completedRequiredCount == requiredFieldCount ? "保存の準備ができました" : "まず必須項目を入力")
+                    .font(.headline)
+                    .foregroundStyle(Color.primaryText)
+                Text("必須 \(completedRequiredCount)/\(requiredFieldCount) ・ 任意 \(optionalFieldCount)項目入力済み")
+                    .font(.caption)
+                    .foregroundStyle(Color.secondaryText)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+struct EditorFieldLabel: View {
+    var title: String
+    var systemImage: String
+    var isRequired = false
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: systemImage)
+                .foregroundStyle(Color.uniexamIndigo)
+                .frame(width: 18)
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.primaryText)
+            if isRequired {
+                Text("必須")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(Color.schoolCoral)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.schoolCoral.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+            }
+        }
+    }
+}
+
+struct EditorTextField: View {
+    var title: String
+    var placeholder: String
+    var systemImage: String
+    @Binding var text: String
+    var isRequired = false
+    var axis: Axis = .horizontal
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            EditorFieldLabel(title: title, systemImage: systemImage, isRequired: isRequired)
+            TextField(placeholder, text: $text, axis: axis)
+                .font(.body)
+                .lineLimit(axis == .vertical ? 2...6 : 1...1)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color.appBackground, in: RoundedRectangle(cornerRadius: 7))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 7)
+                        .stroke(Color.secondaryText.opacity(0.18), lineWidth: 1)
+                }
+        }
+        .padding(.vertical, 3)
+    }
+}
+
+struct EditorSectionHeader: View {
+    var title: String
+    var subtitle: String
+    var systemImage: String
+    var completedCount: Int
+    var tint: Color
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(tint)
+                .frame(width: 34, height: 34)
+                .background(tint.opacity(0.13), in: RoundedRectangle(cornerRadius: 7))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(Color.primaryText)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(Color.secondaryText)
+            }
+            Spacer(minLength: 4)
+            if completedCount > 0 {
+                Text("\(completedCount)件")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(tint)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(tint.opacity(0.12), in: Capsule())
+            }
+        }
+        .padding(.vertical, 3)
+    }
+}
+
+struct SchoolColorPicker: View {
+    @Binding var selection: SchoolColor
+    @State private var isExpanded = false
+
+    private let columns = Array(
+        repeating: GridItem(.flexible(), spacing: 12),
+        count: 5
+    )
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                withAnimation(.snappy(duration: 0.2)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    Circle()
+                        .fill(selection.color)
+                        .frame(width: 24, height: 24)
+                        .overlay {
+                            Circle()
+                                .stroke(Color.white, lineWidth: 2)
+                        }
+                        .shadow(color: selection.color.opacity(0.35), radius: 4, y: 2)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(selection.displayName)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.primaryText)
+                        Text(selection.hexCode)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(Color.secondaryText)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color.secondaryText)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                }
+                .padding(12)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(selection.color.opacity(0.35), lineWidth: 1)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("大学カラー")
+            .accessibilityValue("\(selection.displayName) \(selection.hexCode)")
+            .accessibilityHint(isExpanded ? "閉じる" : "色を選ぶ")
+
+            if isExpanded {
+                LazyVGrid(columns: columns, spacing: 14) {
+                    ForEach(SchoolColor.allCases) { color in
+                        Button {
+                            selection = color
+                            withAnimation(.snappy(duration: 0.2)) {
+                                isExpanded = false
+                            }
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(color.color)
+                                if selection == color {
+                                    Image(systemName: "checkmark")
+                                        .font(.caption.weight(.black))
+                                        .foregroundStyle(.white)
+                                }
+                            }
+                            .frame(width: 34, height: 34)
+                            .overlay {
+                                Circle()
+                                    .stroke(selection == color ? Color.deepNavy : .clear, lineWidth: 2)
+                                    .padding(-3)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(color.displayName)
+                        .accessibilityValue(color.hexCode)
+                        .accessibilityAddTraits(selection == color ? .isSelected : [])
+                    }
+                }
+                .padding(.top, 2)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
     }
 }
 
@@ -1580,18 +2439,35 @@ enum UserProfilePersistence {
 }
 
 extension Color {
+    init(hex: UInt32) {
+        self.init(
+            red: Double((hex >> 16) & 0xFF) / 255,
+            green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255
+        )
+    }
+
     static let deepNavy = Color(red: 0.12, green: 0.23, blue: 0.37)
     static let uniexamIndigo = Color(red: 0.28, green: 0.34, blue: 0.78)
     static let clearBlue = Color(red: 0.44, green: 0.65, blue: 0.91)
     static let appBackground = Color(red: 0.97, green: 0.97, blue: 0.98)
     static let primaryText = Color(red: 0.19, green: 0.22, blue: 0.28)
     static let secondaryText = Color(red: 0.48, green: 0.52, blue: 0.58)
-    static let schoolBlue = Color(red: 0.35, green: 0.55, blue: 0.94)
-    static let schoolCoral = Color(red: 0.95, green: 0.43, blue: 0.52)
-    static let schoolTeal = Color(red: 0.30, green: 0.65, blue: 0.66)
-    static let schoolViolet = Color(red: 0.55, green: 0.47, blue: 0.80)
-    static let schoolAmber = Color(red: 0.86, green: 0.66, blue: 0.28)
-    static let schoolMint = Color(red: 0.48, green: 0.75, blue: 0.55)
+    static let schoolBlue = Color(hex: 0x6B8FF3)
+    static let schoolDeepBlue = Color(hex: 0x4E7CE2)
+    static let schoolRosePink = Color(hex: 0xF28AAE)
+    static let schoolBrightRed = Color(hex: 0xFF6B6B)
+    static let schoolPurple = Color(hex: 0xA78BFA)
+    static let schoolViolet = Color(hex: 0xB79AF9)
+    static let schoolMint = Color(hex: 0x4DCCA1)
+    static let schoolTeal = Color(hex: 0x40C4C9)
+    static let schoolLimeGreen = Color(hex: 0xB7D957)
+    static let schoolAmber = Color(hex: 0xF6C453)
+    static let schoolOrange = Color(hex: 0xFFB266)
+    static let schoolCoral = Color(hex: 0xFF8F8F)
+    static let schoolSkyBlue = Color(hex: 0x7BC0F8)
+    static let schoolTurquoise = Color(hex: 0x5ED6E0)
+    static let schoolSlate = Color(hex: 0xA6B2C7)
 }
 
 extension Date {
@@ -1599,6 +2475,28 @@ extension Date {
 
     static func from(year: Int, month: Int, day: Int) -> Date {
         Calendar.current.date(from: DateComponents(year: year, month: month, day: day)) ?? Date()
+    }
+
+    static func applicationPeriodText(start: Date?, end: Date?) -> String {
+        switch (start, end) {
+        case let (start?, end?):
+            "\(start.formatted(.shortMonthDay))〜\(end.formatted(.shortMonthDay))"
+        case let (start?, nil):
+            "\(start.formatted(.shortMonthDay))〜未設定"
+        case let (nil, end?):
+            "未設定〜\(end.formatted(.shortMonthDay))"
+        default:
+            ""
+        }
+    }
+
+    static func applicationPeriodDaysText(start: Date?, end: Date?) -> String? {
+        guard let start, let end else { return nil }
+        let calendar = Calendar.current
+        let startDay = calendar.startOfDay(for: start)
+        let endDay = calendar.startOfDay(for: end)
+        guard let days = calendar.dateComponents([.day], from: startDay, to: endDay).day else { return nil }
+        return "\(abs(days) + 1)日間"
     }
 }
 
