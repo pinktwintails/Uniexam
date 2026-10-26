@@ -6,24 +6,34 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
-    @State private var schools: [ExamSchool]
+    @State private var universities: [UniversityChoice]
     @State private var userDeviation: Double
 
     init() {
-        _schools = State(initialValue: SchoolPersistence.load())
+        _universities = State(initialValue: UniversityPersistence.load())
         _userDeviation = State(initialValue: UserProfilePersistence.loadDeviation())
+    }
+
+    private var schools: [ExamSchool] {
+        universities.flatMap(\.joinedSchools)
     }
 
     var body: some View {
         TabView {
-            SchoolListView(schools: $schools)
+            UniversityListView(universities: $universities, listMode: .university)
                 .tabItem {
                     Label("志望校", systemImage: "building.columns")
                 }
 
-            ExamCalendarView(schools: schools)
+            UniversityListView(universities: $universities, listMode: .examOption)
+                .tabItem {
+                    Label("入試方式", systemImage: "doc.text")
+                }
+
+            ExamCalendarView(universities: universities)
                 .tabItem {
                     Label("カレンダー", systemImage: "calendar")
                 }
@@ -34,8 +44,8 @@ struct ContentView: View {
                 }
         }
         .tint(.uniexamIndigo)
-        .onChange(of: schools) { _, newValue in
-            SchoolPersistence.save(newValue)
+        .onChange(of: universities) { _, newValue in
+            UniversityPersistence.save(newValue)
         }
         .onChange(of: userDeviation) { _, newValue in
             UserProfilePersistence.saveDeviation(newValue)
@@ -45,9 +55,13 @@ struct ContentView: View {
 
 struct ExamSchool: Identifiable, Hashable, Codable {
     var id = UUID()
+    var universityID: UUID?
     var name: String
+    var nameKana: String
     var faculty: String
     var method: String
+    var admissionCategory: ExamOptionCategory?
+    var universityType: UniversityType
     var deviation: Double
     var color: SchoolColor
     var examDate: Date?
@@ -62,6 +76,7 @@ struct ExamSchool: Identifiable, Hashable, Codable {
     var passnaviURL: String
     var applicationURL: String
     var subjects: [SubjectScore]
+    var commonTestSubjects: [SubjectScore]
     var minimumPassingScore: String
     var acceptanceRatio: String
     var capacity: String
@@ -73,6 +88,129 @@ struct ExamSchool: Identifiable, Hashable, Codable {
 
     var deviationText: String {
         String(format: "%.1f", deviation)
+    }
+
+    var resolvedAdmissionCategory: ExamOptionCategory {
+        admissionCategory ?? .inferred(from: method)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case universityID
+        case name
+        case nameKana
+        case faculty
+        case method
+        case admissionCategory
+        case universityType
+        case deviation
+        case color
+        case examDate
+        case applicationStart
+        case applicationEnd
+        case paymentDeadline
+        case requiredDocuments
+        case resultDate
+        case admissionFeeDeadline
+        case tuitionDeadline
+        case guidelineURL
+        case passnaviURL
+        case applicationURL
+        case subjects
+        case commonTestSubjects
+        case minimumPassingScore
+        case acceptanceRatio
+        case capacity
+        case memo
+    }
+
+    init(
+        id: UUID = UUID(),
+        universityID: UUID? = nil,
+        name: String,
+        nameKana: String = "",
+        faculty: String,
+        method: String,
+        admissionCategory: ExamOptionCategory? = nil,
+        universityType: UniversityType = .privateSchool,
+        deviation: Double,
+        color: SchoolColor,
+        examDate: Date?,
+        applicationStart: Date?,
+        applicationEnd: Date?,
+        paymentDeadline: Date?,
+        requiredDocuments: String,
+        resultDate: Date?,
+        admissionFeeDeadline: Date?,
+        tuitionDeadline: Date?,
+        guidelineURL: String,
+        passnaviURL: String,
+        applicationURL: String,
+        subjects: [SubjectScore],
+        commonTestSubjects: [SubjectScore] = [],
+        minimumPassingScore: String,
+        acceptanceRatio: String,
+        capacity: String,
+        memo: String
+    ) {
+        self.id = id
+        self.universityID = universityID
+        self.name = name
+        self.nameKana = nameKana
+        self.faculty = faculty
+        self.method = method
+        self.admissionCategory = admissionCategory
+        self.universityType = universityType
+        self.deviation = deviation
+        self.color = color
+        self.examDate = examDate
+        self.applicationStart = applicationStart
+        self.applicationEnd = applicationEnd
+        self.paymentDeadline = paymentDeadline
+        self.requiredDocuments = requiredDocuments
+        self.resultDate = resultDate
+        self.admissionFeeDeadline = admissionFeeDeadline
+        self.tuitionDeadline = tuitionDeadline
+        self.guidelineURL = guidelineURL
+        self.passnaviURL = passnaviURL
+        self.applicationURL = applicationURL
+        self.subjects = subjects
+        self.commonTestSubjects = commonTestSubjects
+        self.minimumPassingScore = minimumPassingScore
+        self.acceptanceRatio = acceptanceRatio
+        self.capacity = capacity
+        self.memo = memo
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        universityID = try container.decodeIfPresent(UUID.self, forKey: .universityID)
+        name = try container.decode(String.self, forKey: .name)
+        nameKana = try container.decodeIfPresent(String.self, forKey: .nameKana) ?? ""
+        faculty = try container.decode(String.self, forKey: .faculty)
+        method = try container.decode(String.self, forKey: .method)
+        admissionCategory = try container.decodeIfPresent(ExamOptionCategory.self, forKey: .admissionCategory)
+        universityType = try container.decodeIfPresent(UniversityType.self, forKey: .universityType) ?? .privateSchool
+        deviation = try container.decode(Double.self, forKey: .deviation)
+        color = try container.decode(SchoolColor.self, forKey: .color)
+        examDate = try container.decodeIfPresent(Date.self, forKey: .examDate)
+        applicationStart = try container.decodeIfPresent(Date.self, forKey: .applicationStart)
+        applicationEnd = try container.decodeIfPresent(Date.self, forKey: .applicationEnd)
+        paymentDeadline = try container.decodeIfPresent(Date.self, forKey: .paymentDeadline)
+        requiredDocuments = try container.decode(String.self, forKey: .requiredDocuments)
+        resultDate = try container.decodeIfPresent(Date.self, forKey: .resultDate)
+        admissionFeeDeadline = try container.decodeIfPresent(Date.self, forKey: .admissionFeeDeadline)
+        tuitionDeadline = try container.decodeIfPresent(Date.self, forKey: .tuitionDeadline)
+        guidelineURL = try container.decode(String.self, forKey: .guidelineURL)
+        passnaviURL = try container.decode(String.self, forKey: .passnaviURL)
+        applicationURL = try container.decode(String.self, forKey: .applicationURL)
+        subjects = try container.decode([SubjectScore].self, forKey: .subjects)
+        commonTestSubjects = try container.decodeIfPresent([SubjectScore].self, forKey: .commonTestSubjects) ?? []
+        minimumPassingScore = try container.decode(String.self, forKey: .minimumPassingScore)
+        acceptanceRatio = try container.decode(String.self, forKey: .acceptanceRatio)
+        capacity = try container.decode(String.self, forKey: .capacity)
+        memo = try container.decode(String.self, forKey: .memo)
     }
 
     var filledDetailItems: [DetailItem] {
@@ -88,7 +226,10 @@ struct ExamSchool: Identifiable, Hashable, Codable {
         appendURL("パスナビURL", passnaviURL, &items)
         appendURL("出願サイトURL", applicationURL, &items)
         if !subjects.isEmpty {
-            items.append(DetailItem(title: "科目・配点", value: subjects.map(\.displayText).joined(separator: " / "), systemImage: "book"))
+            items.append(DetailItem(title: "個別試験 科目・配点", value: subjects.map(\.displayText).joined(separator: " / "), systemImage: "book"))
+        }
+        if !commonTestSubjects.isEmpty {
+            items.append(DetailItem(title: "共通テスト 科目・配点", value: commonTestSubjects.map(\.displayText).joined(separator: " / "), systemImage: "checklist"))
         }
         appendText("合格者最低点", minimumPassingScore, "target", &items)
         appendText("倍率", acceptanceRatio, "chart.bar", &items)
@@ -99,14 +240,28 @@ struct ExamSchool: Identifiable, Hashable, Codable {
 
     var events: [ExamEvent] {
         [
-            ExamEvent(schoolID: id, schoolName: name, schoolColor: color, kind: .applicationStart, date: applicationStart, title: "出願開始"),
-            ExamEvent(schoolID: id, schoolName: name, schoolColor: color, kind: .applicationEnd, date: applicationEnd, title: "出願締切"),
-            ExamEvent(schoolID: id, schoolName: name, schoolColor: color, kind: .paymentDeadline, date: paymentDeadline, title: "入金締切"),
-            ExamEvent(schoolID: id, schoolName: name, schoolColor: color, kind: .exam, date: examDate, title: "入試日程"),
-            ExamEvent(schoolID: id, schoolName: name, schoolColor: color, kind: .result, date: resultDate, title: "合格発表"),
-            ExamEvent(schoolID: id, schoolName: name, schoolColor: color, kind: .admissionFee, date: admissionFeeDeadline, title: "入学金締切"),
-            ExamEvent(schoolID: id, schoolName: name, schoolColor: color, kind: .tuition, date: tuitionDeadline, title: "授業料締切")
+            makeEvent(kind: .applicationStart, date: applicationStart, title: "出願開始"),
+            makeEvent(kind: .applicationEnd, date: applicationEnd, title: "出願締切"),
+            makeEvent(kind: .paymentDeadline, date: paymentDeadline, title: "入金締切"),
+            makeEvent(kind: .exam, date: examDate, title: "入試日程"),
+            makeEvent(kind: .result, date: resultDate, title: "合格発表"),
+            makeEvent(kind: .admissionFee, date: admissionFeeDeadline, title: "入学金締切"),
+            makeEvent(kind: .tuition, date: tuitionDeadline, title: "授業料締切")
         ].compactMap { $0.date == nil ? nil : $0 }
+    }
+
+    private func makeEvent(kind: EventKind, date: Date?, title: String) -> ExamEvent {
+        ExamEvent(
+            universityID: universityID ?? id,
+            examOptionID: id,
+            schoolName: name,
+            faculty: faculty,
+            optionName: method,
+            schoolColor: color,
+            kind: kind,
+            date: date,
+            title: title
+        )
     }
 
     private func appendDate(_ title: String, _ date: Date?, _ image: String, _ items: inout [DetailItem]) {
@@ -164,28 +319,68 @@ struct SchoolDetailSection: Identifiable {
     var id: String { title }
 }
 
+enum UniversityType: String, CaseIterable, Identifiable, Codable {
+    case nationalPublic
+    case privateSchool
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .nationalPublic: "国公立"
+        case .privateSchool: "私立"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .nationalPublic: "building.2.fill"
+        case .privateSchool: "building.columns.fill"
+        }
+    }
+}
+
 struct ExamEvent: Identifiable, Hashable {
     var id = UUID()
-    var schoolID: UUID
+    var universityID: UUID
+    var examOptionID: UUID
     var schoolName: String
+    var faculty: String
+    var optionName: String
     var schoolColor: SchoolColor
     var kind: EventKind
     var date: Date?
     var title: String
 
+    var schoolID: UUID { examOptionID }
+
     var compactCalendarTitle: String {
-        "\(kind.shortTitle) \(schoolName.replacingOccurrences(of: "大学", with: ""))"
+        calendarTitle(includesUniversityName: true)
+    }
+
+    func calendarTitle(includesUniversityName: Bool) -> String {
+        let university = schoolName.replacingOccurrences(of: "大学", with: "")
+        let option = optionName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !includesUniversityName {
+            return kind.shortTitle
+        }
+        return option.isEmpty ? "\(kind.shortTitle) \(university)" : "\(kind.shortTitle) \(university)・\(option)"
     }
 }
 
 struct CalendarApplicationRange: Identifiable, Hashable {
     var id = UUID()
-    var schoolID: UUID
+    var universityID: UUID
+    var examOptionID: UUID
     var schoolName: String
+    var faculty: String
+    var optionName: String
     var schoolColor: SchoolColor
     var startDate: Date
     var endDate: Date
     var lane: Int = 0
+
+    var schoolID: UUID { examOptionID }
 
     func contains(_ date: Date, calendar: Calendar) -> Bool {
         let day = calendar.startOfDay(for: date)
@@ -237,9 +432,19 @@ enum EventKind: String, CaseIterable, Identifiable, Codable {
         case .tuition: "授業料"
         }
     }
+
+    var calendarPriority: Int {
+        switch self {
+        case .exam: 0
+        case .applicationEnd: 1
+        case .paymentDeadline, .admissionFee, .tuition: 2
+        case .result: 3
+        case .applicationStart, .all: 4
+        }
+    }
 }
 
-enum SchoolColor: String, CaseIterable, Identifiable, Codable {
+enum SchoolColor: CaseIterable, Identifiable, Codable, Hashable {
     case blue
     case deepBlue
     case rosePink
@@ -255,8 +460,22 @@ enum SchoolColor: String, CaseIterable, Identifiable, Codable {
     case skyBlue
     case turquoise
     case slate
+    case custom(name: String, hex: String)
 
-    var id: String { rawValue }
+    static let allCases: [SchoolColor] = [
+        .blue,
+        .rosePink,
+        .brightRed,
+        .purple,
+        .mint,
+        .teal,
+        .limeGreen,
+        .amber,
+        .skyBlue,
+        .slate
+    ]
+
+    var id: String { storageValue }
 
     var color: Color {
         switch self {
@@ -275,6 +494,7 @@ enum SchoolColor: String, CaseIterable, Identifiable, Codable {
         case .skyBlue: .schoolSkyBlue
         case .turquoise: .schoolTurquoise
         case .slate: .schoolSlate
+        case let .custom(_, hex): Color(hexString: hex)
         }
     }
 
@@ -295,6 +515,7 @@ enum SchoolColor: String, CaseIterable, Identifiable, Codable {
         case .skyBlue: "スカイブルー"
         case .turquoise: "ターコイズ"
         case .slate: "スレート"
+        case let .custom(name, _): name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "カスタムカラー" : name
         }
     }
 
@@ -315,7 +536,81 @@ enum SchoolColor: String, CaseIterable, Identifiable, Codable {
         case .skyBlue: "#7BC0F8"
         case .turquoise: "#5ED6E0"
         case .slate: "#A6B2C7"
+        case let .custom(_, hex): Self.normalizedHex(hex)
         }
+    }
+
+    var isCustom: Bool {
+        if case .custom = self { return true }
+        return false
+    }
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        if value.hasPrefix("custom|") {
+            let components = value.split(separator: "|", omittingEmptySubsequences: false)
+            if components.count == 3,
+               let nameData = Data(base64Encoded: String(components[1])),
+               let name = String(data: nameData, encoding: .utf8) {
+                self = .custom(name: name, hex: String(components[2]))
+                return
+            }
+        }
+        if value.hasPrefix("custom:") {
+            self = .custom(name: "カスタムカラー", hex: String(value.dropFirst("custom:".count)))
+            return
+        }
+
+        self = switch value {
+        case "blue": .blue
+        case "deepBlue": .deepBlue
+        case "rosePink": .rosePink
+        case "brightRed": .brightRed
+        case "purple": .purple
+        case "violet": .violet
+        case "mint": .mint
+        case "teal": .teal
+        case "limeGreen": .limeGreen
+        case "amber": .amber
+        case "orange": .orange
+        case "coral": .coral
+        case "skyBlue": .skyBlue
+        case "turquoise": .turquoise
+        case "slate": .slate
+        default: .blue
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(storageValue)
+    }
+
+    private var storageValue: String {
+        switch self {
+        case .blue: "blue"
+        case .deepBlue: "deepBlue"
+        case .rosePink: "rosePink"
+        case .brightRed: "brightRed"
+        case .purple: "purple"
+        case .violet: "violet"
+        case .mint: "mint"
+        case .teal: "teal"
+        case .limeGreen: "limeGreen"
+        case .amber: "amber"
+        case .orange: "orange"
+        case .coral: "coral"
+        case .skyBlue: "skyBlue"
+        case .turquoise: "turquoise"
+        case .slate: "slate"
+        case let .custom(name, hex):
+            "custom|\(Data(name.utf8).base64EncodedString())|\(Self.normalizedHex(hex))"
+        }
+    }
+
+    private static func normalizedHex(_ value: String) -> String {
+        let digits = value.trimmingCharacters(in: CharacterSet.alphanumerics.inverted).uppercased()
+        return "#\(String(digits.prefix(6)))"
     }
 }
 
@@ -373,9 +668,37 @@ struct AppTopBar: View {
     }
 }
 
+enum SchoolSortOption: String, CaseIterable, Identifiable {
+    case alphabetical
+    case deviation
+    case examDate
+    case nearestEvent
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .alphabetical: "五十音順"
+        case .deviation: "偏差値順"
+        case .examDate: "試験日程順"
+        case .nearestEvent: "直近の予定順"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .alphabetical: "textformat.abc"
+        case .deviation: "chart.line.uptrend.xyaxis"
+        case .examDate: "calendar"
+        case .nearestEvent: "clock.badge"
+        }
+    }
+}
+
 struct SchoolListView: View {
     @Binding var schools: [ExamSchool]
     @State private var showingAddSheet = false
+    @AppStorage("schoolListSortOption") private var sortOption = SchoolSortOption.alphabetical
 
     var body: some View {
         NavigationStack {
@@ -384,11 +707,40 @@ struct SchoolListView: View {
                     showingAddSheet = true
                 })
 
+                HStack(spacing: 12) {
+                    Text("\(schools.count)校")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.secondaryText)
+
+                    Spacer()
+
+                    Menu {
+                        Picker("並び替え", selection: $sortOption) {
+                            ForEach(SchoolSortOption.allCases) { option in
+                                Label(option.title, systemImage: option.systemImage)
+                                    .tag(option)
+                            }
+                        }
+                    } label: {
+                        Label(sortOption.title, systemImage: "arrow.up.arrow.down")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.uniexamIndigo)
+                            .padding(.horizontal, 11)
+                            .frame(height: 34)
+                            .background(Color.uniexamIndigo.opacity(0.09), in: RoundedRectangle(cornerRadius: 7))
+                    }
+                    .accessibilityLabel("志望校を並び替え")
+                    .accessibilityValue(sortOption.title)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .background(.white)
+
                 ScrollView {
                     LazyVStack(spacing: 12) {
-                        ForEach($schools) { $school in
+                        ForEach(sortedSchools) { school in
                             NavigationLink {
-                                SchoolDetailView(school: $school)
+                                SchoolDetailView(school: binding(for: school))
                             } label: {
                                 SchoolRow(school: school)
                             }
@@ -413,6 +765,77 @@ struct SchoolListView: View {
             }
         }
     }
+
+    private var sortedSchools: [ExamSchool] {
+        schools.sorted { lhs, rhs in
+            switch sortOption {
+            case .alphabetical:
+                return alphabeticallyPrecedes(lhs, rhs)
+            case .deviation:
+                if lhs.deviation != rhs.deviation {
+                    return lhs.deviation > rhs.deviation
+                }
+                return alphabeticallyPrecedes(lhs, rhs)
+            case .examDate:
+                return datePrecedes(lhs.examDate, rhs.examDate, lhs: lhs, rhs: rhs)
+            case .nearestEvent:
+                return datePrecedes(nextEventDate(for: lhs), nextEventDate(for: rhs), lhs: lhs, rhs: rhs)
+            }
+        }
+    }
+
+    private func alphabeticallyPrecedes(_ lhs: ExamSchool, _ rhs: ExamSchool) -> Bool {
+        let lhsSortName = lhs.nameKana.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? lhs.name : lhs.nameKana
+        let rhsSortName = rhs.nameKana.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? rhs.name : rhs.nameKana
+        let nameComparison = lhsSortName.compare(
+            rhsSortName,
+            options: [.caseInsensitive, .widthInsensitive],
+            range: nil,
+            locale: Locale(identifier: "ja_JP")
+        )
+        if nameComparison != .orderedSame {
+            return nameComparison == .orderedAscending
+        }
+
+        let detailComparison = "\(lhs.faculty)\(lhs.method)".localizedStandardCompare("\(rhs.faculty)\(rhs.method)")
+        if detailComparison != .orderedSame {
+            return detailComparison == .orderedAscending
+        }
+        return lhs.id.uuidString < rhs.id.uuidString
+    }
+
+    private func datePrecedes(_ lhsDate: Date?, _ rhsDate: Date?, lhs: ExamSchool, rhs: ExamSchool) -> Bool {
+        switch (lhsDate, rhsDate) {
+        case let (lhsDate?, rhsDate?):
+            if lhsDate != rhsDate {
+                return lhsDate < rhsDate
+            }
+            return alphabeticallyPrecedes(lhs, rhs)
+        case (_?, nil):
+            return true
+        case (nil, _?):
+            return false
+        case (nil, nil):
+            return alphabeticallyPrecedes(lhs, rhs)
+        }
+    }
+
+    private func nextEventDate(for school: ExamSchool) -> Date? {
+        school.events
+            .compactMap(\.date)
+            .filter { $0 >= .demoToday }
+            .min()
+    }
+
+    private func binding(for school: ExamSchool) -> Binding<ExamSchool> {
+        Binding(
+            get: { schools.first(where: { $0.id == school.id }) ?? school },
+            set: { updatedSchool in
+                guard let index = schools.firstIndex(where: { $0.id == school.id }) else { return }
+                schools[index] = updatedSchool
+            }
+        )
+    }
 }
 
 struct SchoolRow: View {
@@ -434,7 +857,7 @@ struct SchoolRow: View {
                             .foregroundStyle(Color.secondaryText)
                     }
 
-                    Text("\(school.faculty.isEmpty ? "学部未入力" : school.faculty)  |  \(school.method)  |  偏差値 \(school.deviationText)")
+                    Text("\(school.faculty.isEmpty ? "学部未入力" : school.faculty)  |  \(school.universityType.displayName)  |  \(school.method)  |  偏差値 \(school.deviationText)")
                         .font(.subheadline)
                         .foregroundStyle(Color.secondaryText)
                         .lineLimit(1)
@@ -483,6 +906,7 @@ struct SchoolRow: View {
 struct SchoolDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var school: ExamSchool
+    var fixedUniversity: UniversityChoice? = nil
     @State private var showingEditSheet = false
 
     var body: some View {
@@ -552,7 +976,7 @@ struct SchoolDetailView: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showingEditSheet) {
-            EditSchoolView(mode: .edit, school: school) { updatedSchool in
+            EditSchoolView(mode: .edit, school: school, fixedUniversity: fixedUniversity) { updatedSchool in
                 school = updatedSchool
             }
         }
@@ -613,9 +1037,18 @@ struct SchoolDetailView: View {
         if !school.subjects.isEmpty {
             items.append(
                 DetailItem(
-                    title: "科目・配点",
+                    title: "個別試験 科目・配点",
                     value: school.subjects.map(\.displayText).joined(separator: " / "),
                     systemImage: "book.closed.fill"
+                )
+            )
+        }
+        if !school.commonTestSubjects.isEmpty {
+            items.append(
+                DetailItem(
+                    title: "共通テスト 科目・配点",
+                    value: school.commonTestSubjects.map(\.displayText).joined(separator: " / "),
+                    systemImage: "checklist"
                 )
             )
         }
@@ -713,9 +1146,12 @@ struct SchoolDetailSummary: View {
                     Text(school.faculty)
                         .font(.subheadline)
                         .foregroundStyle(Color.secondaryText)
-                    Label(school.method, systemImage: "list.clipboard")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.primaryText)
+                    HStack(spacing: 8) {
+                        Label(school.universityType.displayName, systemImage: school.universityType.systemImage)
+                        Label(school.method, systemImage: "list.clipboard")
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.primaryText)
                 }
 
                 Spacer(minLength: 8)
@@ -824,13 +1260,16 @@ struct EditSchoolView: View {
 
     private enum FocusedField: Hashable {
         case name
+        case nameKana
         case method
         case faculty
+        case deviation
     }
 
     @Environment(\.dismiss) private var dismiss
     var mode: Mode
     @State var school: ExamSchool
+    var fixedUniversity: UniversityChoice? = nil
     @State private var expandedSections: Set<EditorSection> = []
     @FocusState private var focusedField: FocusedField?
     var onSave: (ExamSchool) -> Void
@@ -841,6 +1280,7 @@ struct EditSchoolView: View {
                 Section {
                     EditorProgressHeader(
                         completedRequiredCount: completedRequiredCount,
+                        requiredFieldCount: requiredFieldCount,
                         optionalFieldCount: optionalFieldCount,
                         tint: school.color.color
                     )
@@ -848,14 +1288,53 @@ struct EditSchoolView: View {
                 }
 
                 Section {
-                    EditorTextField(
-                        title: "学校名",
-                        placeholder: "例：青葉大学",
-                        systemImage: "building.columns.fill",
-                        text: $school.name,
-                        isRequired: true
-                    )
-                    .focused($focusedField, equals: .name)
+                    if let fixedUniversity {
+                        HStack(spacing: 12) {
+                            Text(String(fixedUniversity.name.prefix(1)))
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 42, height: 42)
+                                .background(fixedUniversity.color.color, in: RoundedRectangle(cornerRadius: 8))
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(fixedUniversity.name)
+                                    .font(.headline)
+                                Text("\(fixedUniversity.universityType.displayName)・大学情報は共通で管理")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.secondaryText)
+                            }
+                            Spacer()
+                        }
+                        .padding(.vertical, 4)
+                    } else {
+                        EditorTextField(
+                            title: "学校名",
+                            placeholder: "例：青葉大学",
+                            systemImage: "building.columns.fill",
+                            text: $school.name,
+                            isRequired: true
+                        )
+                        .focused($focusedField, equals: .name)
+
+                        EditorTextField(
+                            title: "学校名（ふりがな）",
+                            placeholder: "例：あおばだいがく",
+                            systemImage: "textformat",
+                            text: $school.nameKana
+                        )
+                        .focused($focusedField, equals: .nameKana)
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            EditorFieldLabel(title: "大学種別", systemImage: "building.2.crop.circle.fill", isRequired: true)
+                            Picker("大学種別", selection: $school.universityType) {
+                                ForEach(UniversityType.allCases) { type in
+                                    Label(type.displayName, systemImage: type.systemImage)
+                                        .tag(type)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                        }
+                        .padding(.vertical, 4)
+                    }
 
                     EditorTextField(
                         title: "入試方式",
@@ -866,19 +1345,34 @@ struct EditSchoolView: View {
                     )
                     .focused($focusedField, equals: .method)
 
+                    VStack(alignment: .leading, spacing: 10) {
+                        EditorFieldLabel(title: "方式区分", systemImage: "rectangle.3.group")
+                        Picker("方式区分", selection: admissionCategoryBinding) {
+                            ForEach(ExamOptionCategory.allCases) { category in
+                                Text(category.rawValue).tag(category)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    .padding(.vertical, 4)
+
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             EditorFieldLabel(title: "偏差値", systemImage: "chart.line.uptrend.xyaxis", isRequired: true)
                             Spacer()
-                            Text(school.deviation, format: .number.precision(.fractionLength(1)))
+                            TextField("60.0", value: deviationBinding, format: .number.precision(.fractionLength(1)))
                                 .font(.headline.weight(.bold))
                                 .monospacedDigit()
+                                .multilineTextAlignment(.trailing)
+                                .keyboardType(.decimalPad)
+                                .focused($focusedField, equals: .deviation)
                                 .foregroundStyle(Color.deepNavy)
+                                .frame(width: 64)
                                 .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
+                                .padding(.vertical, 6)
                                 .background(school.color.color.opacity(0.16), in: RoundedRectangle(cornerRadius: 6))
                         }
-                        Slider(value: $school.deviation, in: 35...80, step: 0.5)
+                        Slider(value: deviationBinding, in: 30...80, step: 0.5)
                             .tint(school.color.color)
                     }
                     .padding(.vertical, 4)
@@ -892,15 +1386,17 @@ struct EditSchoolView: View {
                     )
                     .focused($focusedField, equals: .faculty)
 
-                    VStack(alignment: .leading, spacing: 12) {
-                        EditorFieldLabel(title: "大学カラー", systemImage: "paintpalette.fill", isRequired: true)
-                        SchoolColorPicker(selection: $school.color)
+                    if fixedUniversity == nil {
+                        VStack(alignment: .leading, spacing: 12) {
+                            EditorFieldLabel(title: "大学カラー", systemImage: "paintpalette.fill", isRequired: true)
+                            SchoolColorPicker(selection: $school.color)
+                        }
                     }
                 } header: {
-                    Text("必須項目")
+                    Text(fixedUniversity == nil ? "必須項目" : "入試方式の基本情報")
                 } footer: {
-                    if completedRequiredCount < 5 {
-                        Label("学校名・入試方式・学部学科を入力すると保存できます", systemImage: "info.circle")
+                    if completedRequiredCount < requiredFieldCount {
+                        Label(fixedUniversity == nil ? "学校名・大学種別・入試方式・学部学科を入力すると保存できます" : "入試方式・学部学科を入力すると保存できます", systemImage: "info.circle")
                             .foregroundStyle(Color.secondaryText)
                     }
                 }
@@ -938,10 +1434,12 @@ struct EditSchoolView: View {
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    EditorTextField(title: "パスナビURL", placeholder: "https://", systemImage: "link", text: $school.passnaviURL)
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                    if fixedUniversity == nil {
+                        EditorTextField(title: "パスナビURL", placeholder: "https://", systemImage: "link", text: $school.passnaviURL)
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
                     EditorTextField(title: "出願サイトURL", placeholder: "https://", systemImage: "link", text: $school.applicationURL)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
@@ -955,7 +1453,18 @@ struct EditSchoolView: View {
                     systemImage: "pencil.and.list.clipboard",
                     completedCount: examInformationCount
                 ) {
-                    SubjectEditor(subjects: $school.subjects)
+                    SubjectEditor(
+                        title: "個別試験の科目ごとの配点",
+                        systemImage: "book.closed.fill",
+                        addPlaceholder: "個別試験の科目を追加",
+                        subjects: $school.subjects
+                    )
+                    SubjectEditor(
+                        title: "共通テストの科目ごとの配点",
+                        systemImage: "checklist",
+                        addPlaceholder: "共通テストの科目を追加",
+                        subjects: $school.commonTestSubjects
+                    )
                     EditorTextField(title: "合格者最低点", placeholder: "例：320 / 500", systemImage: "target", text: $school.minimumPassingScore)
                     EditorTextField(title: "倍率", placeholder: "例：3.2倍", systemImage: "chart.bar.fill", text: $school.acceptanceRatio)
                     EditorTextField(title: "募集人数", placeholder: "例：80人", systemImage: "person.3.fill", text: $school.capacity)
@@ -981,7 +1490,7 @@ struct EditSchoolView: View {
             .scrollContentBackground(.hidden)
             .background(Color.appBackground)
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle(mode == .add ? "志望校を追加" : "志望校を編集")
+            .navigationTitle(fixedUniversity == nil ? (mode == .add ? "志望校を追加" : "志望校を編集") : (mode == .add ? "入試方式を追加" : "入試方式を編集"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -1010,7 +1519,7 @@ struct EditSchoolView: View {
             }
             .onAppear {
                 if mode == .add {
-                    focusedField = .name
+                    focusedField = fixedUniversity == nil ? .name : .method
                 }
             }
         }
@@ -1055,14 +1564,42 @@ struct EditSchoolView: View {
         )
     }
 
+    private var deviationBinding: Binding<Double> {
+        Binding(
+            get: { school.deviation },
+            set: { newValue in
+                school.deviation = min(80, max(30, (newValue * 2).rounded() / 2))
+            }
+        )
+    }
+
+    private var admissionCategoryBinding: Binding<ExamOptionCategory> {
+        Binding(
+            get: { school.resolvedAdmissionCategory },
+            set: { school.admissionCategory = $0 }
+        )
+    }
+
     private var completedRequiredCount: Int {
-        [
+        if fixedUniversity != nil {
+            return [
+                !school.method.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                !school.faculty.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                true
+            ].filter { $0 }.count
+        }
+        return [
             !school.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            true,
             !school.method.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             !school.faculty.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             true,
             true
         ].filter { $0 }.count
+    }
+
+    private var requiredFieldCount: Int {
+        fixedUniversity == nil ? 6 : 3
     }
 
     private var scheduleCount: Int {
@@ -1087,7 +1624,7 @@ struct EditSchoolView: View {
     }
 
     private var examInformationCount: Int {
-        (school.subjects.isEmpty ? 0 : 1) + nonEmptyCount([
+        (school.subjects.isEmpty ? 0 : 1) + (school.commonTestSubjects.isEmpty ? 0 : 1) + nonEmptyCount([
             school.minimumPassingScore,
             school.acceptanceRatio,
             school.capacity
@@ -1099,7 +1636,7 @@ struct EditSchoolView: View {
     }
 
     private var optionalFieldCount: Int {
-        scheduleCount + applicationInformationCount + examInformationCount + notesCount
+        nonEmptyCount([school.nameKana]) + scheduleCount + applicationInformationCount + examInformationCount + notesCount
     }
 
     private func nonEmptyCount(_ values: [String]) -> Int {
@@ -1245,12 +1782,15 @@ struct ApplicationPeriodPicker: View {
 }
 
 struct SubjectEditor: View {
+    var title: String
+    var systemImage: String
+    var addPlaceholder: String
     @Binding var subjects: [SubjectScore]
     @State private var newSubject = ""
     @State private var newScore = ""
 
     var body: some View {
-        EditorFieldLabel(title: "科目ごとの配点", systemImage: "book.closed.fill")
+        EditorFieldLabel(title: title, systemImage: systemImage)
 
         ForEach($subjects) { $subject in
             HStack(spacing: 10) {
@@ -1274,7 +1814,7 @@ struct SubjectEditor: View {
         }
 
         HStack(spacing: 10) {
-            TextField("科目を追加", text: $newSubject)
+            TextField(addPlaceholder, text: $newSubject)
                 .textFieldStyle(.roundedBorder)
             TextField("配点", text: $newScore)
                 .keyboardType(.numberPad)
@@ -1294,9 +1834,8 @@ struct SubjectEditor: View {
 }
 
 struct EditorProgressHeader: View {
-    private let requiredFieldCount = 5
-
     var completedRequiredCount: Int
+    var requiredFieldCount: Int = 6
     var optionalFieldCount: Int
     var tint: Color
 
@@ -1419,10 +1958,19 @@ struct EditorSectionHeader: View {
 struct SchoolColorPicker: View {
     @Binding var selection: SchoolColor
     @State private var isExpanded = false
+    @State private var customColors = CustomSchoolColorPersistence.load()
+    @State private var draftColor = Color.schoolBlue
+    @State private var draftColorName = ""
+    @State private var colorPendingDeletion: SchoolColor?
 
     private let columns = Array(
         repeating: GridItem(.flexible(), spacing: 12),
         count: 5
+    )
+
+    private let customColumns = Array(
+        repeating: GridItem(.flexible(), spacing: 12),
+        count: 3
     )
 
     var body: some View {
@@ -1438,7 +1986,7 @@ struct SchoolColorPicker: View {
                         .frame(width: 24, height: 24)
                         .overlay {
                             Circle()
-                                .stroke(Color.white, lineWidth: 2)
+                                .stroke(selection.isCustom ? Color.deepNavy : Color.white, lineWidth: 2)
                         }
                         .shadow(color: selection.color.opacity(0.35), radius: 4, y: 2)
 
@@ -1446,8 +1994,8 @@ struct SchoolColorPicker: View {
                         Text(selection.displayName)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(Color.primaryText)
-                        Text(selection.hexCode)
-                            .font(.caption.monospaced())
+                        Text(selection.isCustom ? "保存したカスタム色" : "プリセットカラー")
+                            .font(.caption)
                             .foregroundStyle(Color.secondaryText)
                     }
 
@@ -1467,39 +2015,52 @@ struct SchoolColorPicker: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("大学カラー")
-            .accessibilityValue("\(selection.displayName) \(selection.hexCode)")
+            .accessibilityValue(selection.displayName)
             .accessibilityHint(isExpanded ? "閉じる" : "色を選ぶ")
 
             if isExpanded {
-                LazyVGrid(columns: columns, spacing: 14) {
-                    ForEach(SchoolColor.allCases) { color in
-                        Button {
-                            selection = color
-                            withAnimation(.snappy(duration: 0.2)) {
-                                isExpanded = false
+                VStack(alignment: .leading, spacing: 16) {
+                    LazyVGrid(columns: columns, spacing: 14) {
+                        ForEach(SchoolColor.allCases) { color in
+                            colorButton(color)
+                        }
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("カスタムカラー")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(Color.primaryText)
+
+                        TextField("色の名前", text: $draftColorName)
+                            .textInputAutocapitalization(.never)
+                            .padding(.horizontal, 10)
+                            .frame(height: 40)
+                            .background(Color.appBackground, in: RoundedRectangle(cornerRadius: 6))
+
+                        HStack(spacing: 10) {
+                            ColorPicker("色を選ぶ", selection: $draftColor, supportsOpacity: false)
+                                .font(.subheadline.weight(.semibold))
+
+                            Button {
+                                saveDraftColor()
+                            } label: {
+                                Label("保存", systemImage: "plus")
+                                    .font(.subheadline.weight(.bold))
                             }
-                        } label: {
-                            ZStack {
-                                Circle()
-                                    .fill(color.color)
-                                if selection == color {
-                                    Image(systemName: "checkmark")
-                                        .font(.caption.weight(.black))
-                                        .foregroundStyle(.white)
+                            .buttonStyle(.borderedProminent)
+                            .tint(.uniexamIndigo)
+                            .disabled(draftColorName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+
+                        if !customColors.isEmpty {
+                            LazyVGrid(columns: customColumns, spacing: 12) {
+                                ForEach(customColors) { color in
+                                    customColorButton(color)
                                 }
                             }
-                            .frame(width: 34, height: 34)
-                            .overlay {
-                                Circle()
-                                    .stroke(selection == color ? Color.deepNavy : .clear, lineWidth: 2)
-                                    .padding(-3)
-                            }
-                            .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(color.displayName)
-                        .accessibilityValue(color.hexCode)
-                        .accessibilityAddTraits(selection == color ? .isSelected : [])
                     }
                 }
                 .padding(.top, 2)
@@ -1508,22 +2069,148 @@ struct SchoolColorPicker: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
+        .confirmationDialog(
+            "保存したカスタム色を削除しますか？",
+            isPresented: Binding(
+                get: { colorPendingDeletion != nil },
+                set: { if !$0 { colorPendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("削除", role: .destructive) {
+                guard let colorPendingDeletion else { return }
+                customColors.removeAll { $0 == colorPendingDeletion }
+                CustomSchoolColorPersistence.save(customColors)
+                if selection == colorPendingDeletion {
+                    selection = .blue
+                }
+                self.colorPendingDeletion = nil
+            }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("すでに保存済みの他大学の色は変更されません。")
+        }
+    }
+
+    private func colorButton(_ color: SchoolColor) -> some View {
+        Button {
+            select(color)
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(color.color)
+                if selection == color {
+                    Image(systemName: "checkmark")
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(.white)
+                }
+            }
+            .frame(width: 34, height: 34)
+            .overlay {
+                Circle()
+                    .stroke(selection == color ? Color.deepNavy : .clear, lineWidth: 2)
+                    .padding(-3)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(color.displayName)
+        .accessibilityAddTraits(selection == color ? .isSelected : [])
+    }
+
+    private func customColorButton(_ color: SchoolColor) -> some View {
+        VStack(spacing: 6) {
+            Button {
+                select(color)
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(color.color)
+                    if selection == color {
+                        Image(systemName: "checkmark")
+                            .font(.caption.weight(.black))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .frame(width: 38, height: 38)
+                .overlay {
+                    Circle()
+                        .stroke(
+                            selection == color ? Color.deepNavy : color.color.opacity(0.5),
+                            lineWidth: selection == color ? 3 : 2
+                        )
+                        .padding(-4)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(color.displayName)
+            .accessibilityAddTraits(selection == color ? .isSelected : [])
+
+            HStack(spacing: 2) {
+                Text(color.displayName)
+                    .font(.caption2.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .foregroundStyle(Color.primaryText)
+
+                Button(role: .destructive) {
+                    colorPendingDeletion = color
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.caption2)
+                        .frame(width: 22, height: 22)
+                }
+                .accessibilityLabel("\(color.displayName)を削除")
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func select(_ color: SchoolColor) {
+        selection = color
+        draftColor = color.color
+        if color.isCustom {
+            draftColorName = color.displayName
+        }
+    }
+
+    private func saveDraftColor() {
+        let name = draftColorName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let hex = draftColor.rgbHexCode else { return }
+
+        let customColor = SchoolColor.custom(name: name, hex: hex)
+        if !customColors.contains(customColor) {
+            customColors.append(customColor)
+            CustomSchoolColorPersistence.save(customColors)
+        }
+        selection = customColor
+        draftColorName = ""
     }
 }
 
 struct ExamCalendarView: View {
-    var schools: [ExamSchool]
+    var universities: [UniversityChoice]
     @State private var selectedDate = Date.from(year: 2027, month: 2, day: 6)
     @State private var displayedMonth = Date.from(year: 2027, month: 2, day: 1)
     @State private var selectedKind: EventKind = .all
-    @State private var selectedSchoolID: UUID?
+    @State private var selectedUniversityID: UUID?
+    @State private var selectedOptionID: UUID?
+    @State private var showingFilters = false
 
     private let calendar = Calendar.current
+
+    private var schools: [ExamSchool] {
+        universities.flatMap(\.joinedSchools)
+    }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                AppTopBar(title: "カレンダー", trailingSystemImage: "line.3.horizontal.decrease.circle")
+                AppTopBar(
+                    title: "カレンダー",
+                    trailingSystemImage: "line.3.horizontal.decrease.circle",
+                    trailingAction: { showingFilters = true }
+                )
 
                 filterBar
 
@@ -1569,15 +2256,24 @@ struct ExamCalendarView: View {
                 .background(Color.appBackground)
             }
             .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $showingFilters) {
+                CalendarFilterSheet(
+                    universities: universities,
+                    selectedKind: $selectedKind,
+                    selectedUniversityID: $selectedUniversityID,
+                    selectedOptionID: $selectedOptionID
+                )
+            }
         }
     }
 
     private var filterBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                FilterChip(title: "すべて", isSelected: selectedKind == .all && selectedSchoolID == nil) {
+                FilterChip(title: "すべて", isSelected: selectedKind == .all && selectedUniversityID == nil && selectedOptionID == nil) {
                     selectedKind = .all
-                    selectedSchoolID = nil
+                    selectedUniversityID = nil
+                    selectedOptionID = nil
                 }
 
                 FilterChip(title: "入試日程", isSelected: selectedKind == .exam) {
@@ -1588,9 +2284,15 @@ struct ExamCalendarView: View {
                     selectedKind = .applicationEnd
                 }
 
-                ForEach(schools) { school in
-                    FilterChip(title: school.name, color: school.color.color, isSelected: selectedSchoolID == school.id) {
-                        selectedSchoolID = selectedSchoolID == school.id ? nil : school.id
+                if let university = universities.first(where: { $0.id == selectedUniversityID }) {
+                    FilterChip(title: university.name, color: university.color.color, isSelected: true) {
+                        showingFilters = true
+                    }
+                }
+
+                if let option = selectedOption {
+                    FilterChip(title: option.title, isSelected: true) {
+                        showingFilters = true
                     }
                 }
             }
@@ -1604,8 +2306,9 @@ struct ExamCalendarView: View {
         schools.flatMap(\.events)
             .filter { event in
                 let kindMatches = selectedKind == .all || event.kind == selectedKind
-                let schoolMatches = selectedSchoolID == nil || event.schoolID == selectedSchoolID
-                return kindMatches && schoolMatches
+                let universityMatches = selectedUniversityID == nil || event.universityID == selectedUniversityID
+                let optionMatches = selectedOptionID == nil || event.examOptionID == selectedOptionID
+                return kindMatches && universityMatches && optionMatches
             }
     }
 
@@ -1615,11 +2318,15 @@ struct ExamCalendarView: View {
         }
 
         let ranges = schools.compactMap { school -> CalendarApplicationRange? in
-            guard selectedSchoolID == nil || selectedSchoolID == school.id else { return nil }
+            guard selectedUniversityID == nil || selectedUniversityID == school.universityID else { return nil }
+            guard selectedOptionID == nil || selectedOptionID == school.id else { return nil }
             guard let startDate = school.applicationStart, let endDate = school.applicationEnd else { return nil }
             return CalendarApplicationRange(
-                schoolID: school.id,
+                universityID: school.universityID ?? school.id,
+                examOptionID: school.id,
                 schoolName: school.name,
+                faculty: school.faculty,
+                optionName: school.method,
                 schoolColor: school.color,
                 startDate: startDate,
                 endDate: endDate
@@ -1635,7 +2342,20 @@ struct ExamCalendarView: View {
                 guard let eventDate = event.date else { return false }
                 return calendar.isDate(eventDate, inSameDayAs: date)
             }
-            .sorted { $0.title < $1.title }
+            .sorted(by: eventPrecedes)
+    }
+
+    private var selectedOption: ExamOption? {
+        universities
+            .flatMap(\.examOptions)
+            .first { $0.id == selectedOptionID }
+    }
+
+    private func eventPrecedes(_ lhs: ExamEvent, _ rhs: ExamEvent) -> Bool {
+        let lhsPriority = lhs.kind.calendarPriority
+        let rhsPriority = rhs.kind.calendarPriority
+        if lhsPriority != rhsPriority { return lhsPriority < rhsPriority }
+        return lhs.schoolName.localizedStandardCompare(rhs.schoolName) == .orderedAscending
     }
 
     private func moveMonth(by value: Int) {
@@ -1673,6 +2393,7 @@ struct MonthGridView: View {
     @Binding var selectedDate: Date
     var events: [ExamEvent]
     var applicationRanges: [CalendarApplicationRange]
+    var showsUniversityNameInEvents = true
     var onPreviousMonth: () -> Void
     var onNextMonth: () -> Void
 
@@ -1714,7 +2435,8 @@ struct MonthGridView: View {
                             isCurrentMonth: calendar.isDate(date, equalTo: monthStart, toGranularity: .month),
                             isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
                             events: eventsForDay(date),
-                            applicationRanges: applicationRangesForDay(date)
+                            applicationRanges: applicationRangesForDay(date),
+                            showsUniversityNameInEvents: showsUniversityNameInEvents
                         )
                     }
                     .buttonStyle(.plain)
@@ -1740,6 +2462,12 @@ struct MonthGridView: View {
             guard event.kind != .applicationStart && event.kind != .applicationEnd else { return false }
             return calendar.isDate(eventDate, inSameDayAs: date)
         }
+        .sorted {
+            if $0.kind.calendarPriority != $1.kind.calendarPriority {
+                return $0.kind.calendarPriority < $1.kind.calendarPriority
+            }
+            return $0.schoolName.localizedStandardCompare($1.schoolName) == .orderedAscending
+        }
     }
 
     private func applicationRangesForDay(_ date: Date) -> [CalendarApplicationRange] {
@@ -1753,6 +2481,7 @@ struct CalendarDayCell: View {
     var isSelected: Bool
     var events: [ExamEvent]
     var applicationRanges: [CalendarApplicationRange]
+    var showsUniversityNameInEvents = true
 
     private var cellBackground: Color {
         let hasExam = events.contains { $0.kind == .exam }
@@ -1799,10 +2528,9 @@ struct CalendarDayCell: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(events.prefix(2)) { event in
-                    Text(event.compactCalendarTitle)
-                        .font(.system(size: 8.5, weight: .bold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
+                    Text(event.calendarTitle(includesUniversityName: showsUniversityNameInEvents))
+                        .font(.system(size: 10.5, weight: .bold))
+                        .lineLimit(showsUniversityNameInEvents ? 2 : 1)
                         .foregroundStyle(event.schoolColor.color)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 3)
@@ -1812,8 +2540,8 @@ struct CalendarDayCell: View {
 
                 let hiddenCount = max(applicationRanges.count - visibleRangeLaneCount, 0) + max(events.count - 2, 0)
                 if hiddenCount > 0 {
-                    Text("+\(hiddenCount)")
-                        .font(.system(size: 8, weight: .bold))
+                    Text("ほか\(hiddenCount)件")
+                        .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(Color.secondaryText)
                         .padding(.horizontal, 4)
                 }
@@ -1825,14 +2553,14 @@ struct CalendarDayCell: View {
                         ApplicationRangeRibbon(range: range, date: date)
                     } else {
                         Color.clear
-                            .frame(height: 7)
+                            .frame(height: 10)
                     }
                 }
             }
         }
         .padding(.horizontal, 2)
         .padding(.vertical, 4)
-        .frame(height: 76)
+        .frame(height: 112)
         .background {
             cellBackground
             Rectangle()
@@ -1852,31 +2580,31 @@ struct ApplicationRangeRibbon: View {
             HStack(spacing: 0) {
                 if range.isStart(date, calendar: calendar) {
                     Image(systemName: "arrowtriangle.left.fill")
-                        .font(.system(size: 4.5, weight: .bold))
+                        .font(.system(size: 8, weight: .bold))
                 }
 
                 Rectangle()
-                    .frame(height: 1.5)
+                    .frame(height: 2.5)
 
                 if range.isEnd(date, calendar: calendar) {
                     Image(systemName: "arrowtriangle.right.fill")
-                        .font(.system(size: 4.5, weight: .bold))
+                        .font(.system(size: 8, weight: .bold))
                 }
             }
             .foregroundStyle(range.schoolColor.color)
 
             if range.isStart(date, calendar: calendar) || range.isEnd(date, calendar: calendar) {
                 Text(range.isStart(date, calendar: calendar) ? "出願" : "締切")
-                    .font(.system(size: 6, weight: .bold))
+                    .font(.system(size: 9.5, weight: .bold))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .foregroundStyle(range.schoolColor.color)
-                    .padding(.horizontal, 2)
-                    .background(.white.opacity(0.82), in: Capsule())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1.5)
+                    .background(range.schoolColor.color, in: RoundedRectangle(cornerRadius: 3))
             }
         }
         .padding(.horizontal, -2)
-        .frame(height: 7)
+        .frame(height: 12)
         .frame(maxWidth: .infinity)
         .accessibilityLabel("\(range.schoolName) 出願期間")
     }
@@ -1896,7 +2624,7 @@ struct CalendarEventRow: View {
                 Text(event.schoolName)
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(event.schoolColor.color)
-                Text("\(school?.faculty ?? "") \(school?.method ?? "") \(event.title)")
+                Text([event.faculty, event.optionName, event.title].filter { !$0.isEmpty }.joined(separator: "・"))
                     .font(.headline)
                     .foregroundStyle(Color.primaryText)
                 if let school {
@@ -1911,6 +2639,99 @@ struct CalendarEventRow: View {
                 .foregroundStyle(Color.secondaryText)
         }
         .padding(.vertical, 10)
+    }
+}
+
+struct CalendarFilterSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    var universities: [UniversityChoice]
+    @Binding var selectedKind: EventKind
+    @Binding var selectedUniversityID: UUID?
+    @Binding var selectedOptionID: UUID?
+
+    private var selectedUniversity: UniversityChoice? {
+        universities.first { $0.id == selectedUniversityID }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("予定種別") {
+                    Picker("予定種別", selection: $selectedKind) {
+                        ForEach(EventKind.allCases) { kind in
+                            Label(kind.rawValue, systemImage: kind.icon).tag(kind)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+
+                Section("大学") {
+                    Button {
+                        selectedUniversityID = nil
+                        selectedOptionID = nil
+                    } label: {
+                        filterSelectionRow(title: "すべての大学", selected: selectedUniversityID == nil)
+                    }
+                    .buttonStyle(.plain)
+
+                    ForEach(universities) { university in
+                        Button {
+                            selectedUniversityID = university.id
+                            selectedOptionID = nil
+                        } label: {
+                            filterSelectionRow(
+                                title: university.name,
+                                color: university.color.color,
+                                selected: selectedUniversityID == university.id
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                if let selectedUniversity {
+                    Section("入試方式") {
+                        Button { selectedOptionID = nil } label: {
+                            filterSelectionRow(title: "すべての入試方式", selected: selectedOptionID == nil)
+                        }
+                        .buttonStyle(.plain)
+
+                        ForEach(selectedUniversity.examOptions) { option in
+                            Button { selectedOptionID = option.id } label: {
+                                filterSelectionRow(
+                                    title: option.title.isEmpty ? "名称未入力" : option.title,
+                                    color: selectedUniversity.color.color,
+                                    selected: selectedOptionID == option.id
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("カレンダーを絞り込む")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完了") { dismiss() }
+                }
+            }
+            .presentationDetents([.medium, .large])
+        }
+    }
+
+    private func filterSelectionRow(title: String, color: Color? = nil, selected: Bool) -> some View {
+        HStack {
+            if let color {
+                Circle().fill(color).frame(width: 10, height: 10)
+            }
+            Text(title).foregroundStyle(Color.primaryText)
+            Spacer()
+            if selected {
+                Image(systemName: "checkmark").foregroundStyle(Color.uniexamIndigo)
+            }
+        }
+        .contentShape(Rectangle())
     }
 }
 
@@ -2294,8 +3115,10 @@ extension ExamSchool {
     static func blank(nextColor: SchoolColor = .blue) -> ExamSchool {
         ExamSchool(
             name: "",
+            nameKana: "",
             faculty: "",
             method: "",
+            universityType: .privateSchool,
             deviation: 60,
             color: nextColor,
             examDate: nil,
@@ -2310,6 +3133,7 @@ extension ExamSchool {
             passnaviURL: "",
             applicationURL: "",
             subjects: [],
+            commonTestSubjects: [],
             minimumPassingScore: "",
             acceptanceRatio: "",
             capacity: "",
@@ -2318,89 +3142,7 @@ extension ExamSchool {
     }
 
     static var samples: [ExamSchool] {
-        [
-            ExamSchool(
-                name: "青葉大学",
-                faculty: "経済学部",
-                method: "一般A",
-                deviation: 62,
-                color: .blue,
-                examDate: .from(year: 2027, month: 2, day: 10),
-                applicationStart: .from(year: 2027, month: 1, day: 5),
-                applicationEnd: .from(year: 2027, month: 1, day: 18),
-                paymentDeadline: .from(year: 2027, month: 1, day: 20),
-                requiredDocuments: "調査書、志望理由書、写真",
-                resultDate: .from(year: 2027, month: 2, day: 18),
-                admissionFeeDeadline: .from(year: 2027, month: 2, day: 25),
-                tuitionDeadline: .from(year: 2027, month: 3, day: 8),
-                guidelineURL: "https://www.aoba-u.ac.jp/nyushi/",
-                passnaviURL: "https://passnavi.example/aoba",
-                applicationURL: "",
-                subjects: [
-                    SubjectScore(subject: "英語", score: "200"),
-                    SubjectScore(subject: "国語", score: "150"),
-                    SubjectScore(subject: "数学", score: "150")
-                ],
-                minimumPassingScore: "378/500",
-                acceptanceRatio: "2.6倍",
-                capacity: "80名",
-                memo: "英語の配点が高いので直前に重点確認"
-            ),
-            ExamSchool(
-                name: "桜丘大学",
-                faculty: "法学部",
-                method: "共テ利用",
-                deviation: 58,
-                color: .coral,
-                examDate: .from(year: 2027, month: 2, day: 6),
-                applicationStart: .from(year: 2027, month: 1, day: 4),
-                applicationEnd: .from(year: 2027, month: 1, day: 16),
-                paymentDeadline: .from(year: 2027, month: 1, day: 17),
-                requiredDocuments: "調査書、共通テスト成績請求票",
-                resultDate: .from(year: 2027, month: 2, day: 14),
-                admissionFeeDeadline: .from(year: 2027, month: 2, day: 21),
-                tuitionDeadline: nil,
-                guidelineURL: "",
-                passnaviURL: "https://passnavi.example/sakuraoka",
-                applicationURL: "https://entry.example/sakuraoka",
-                subjects: [
-                    SubjectScore(subject: "英語", score: "100"),
-                    SubjectScore(subject: "国語", score: "100"),
-                    SubjectScore(subject: "地歴公民", score: "100")
-                ],
-                minimumPassingScore: "",
-                acceptanceRatio: "3.1倍",
-                capacity: "45名",
-                memo: ""
-            ),
-            ExamSchool(
-                name: "東都大学",
-                faculty: "文学部",
-                method: "一般B",
-                deviation: 65,
-                color: .teal,
-                examDate: .from(year: 2027, month: 2, day: 14),
-                applicationStart: .from(year: 2027, month: 1, day: 8),
-                applicationEnd: .from(year: 2027, month: 1, day: 25),
-                paymentDeadline: .from(year: 2027, month: 1, day: 26),
-                requiredDocuments: "",
-                resultDate: .from(year: 2027, month: 2, day: 24),
-                admissionFeeDeadline: .from(year: 2027, month: 2, day: 28),
-                tuitionDeadline: .from(year: 2027, month: 3, day: 10),
-                guidelineURL: "https://www.toto-u.ac.jp/admission/",
-                passnaviURL: "",
-                applicationURL: "",
-                subjects: [
-                    SubjectScore(subject: "英語", score: "200"),
-                    SubjectScore(subject: "国語", score: "200"),
-                    SubjectScore(subject: "小論文", score: "100")
-                ],
-                minimumPassingScore: "421/500",
-                acceptanceRatio: "2.1倍",
-                capacity: "60名",
-                memo: "合格発表後の手続き締切が短い"
-            )
-        ]
+        UniversityChoice.samples.flatMap(\.joinedSchools)
     }
 }
 
@@ -2438,12 +3180,50 @@ enum UserProfilePersistence {
     }
 }
 
+enum CustomSchoolColorPersistence {
+    private static let key = "uniexam.customSchoolColors.v1"
+
+    static func load() -> [SchoolColor] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let colors = try? JSONDecoder().decode([SchoolColor].self, from: data) else {
+            return []
+        }
+        return colors.filter(\.isCustom)
+    }
+
+    static func save(_ colors: [SchoolColor]) {
+        guard let data = try? JSONEncoder().encode(colors.filter(\.isCustom)) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
+}
+
 extension Color {
     init(hex: UInt32) {
         self.init(
             red: Double((hex >> 16) & 0xFF) / 255,
             green: Double((hex >> 8) & 0xFF) / 255,
             blue: Double(hex & 0xFF) / 255
+        )
+    }
+
+    init(hexString: String) {
+        let digits = hexString.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        let value = UInt32(digits, radix: 16) ?? 0x6B8FF3
+        self.init(hex: value)
+    }
+
+    var rgbHexCode: String? {
+        let uiColor = UIColor(self)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return nil }
+        return String(
+            format: "#%02X%02X%02X",
+            Int(round(red * 255)),
+            Int(round(green * 255)),
+            Int(round(blue * 255))
         )
     }
 
