@@ -230,6 +230,42 @@ struct UniversityChoice: Identifiable, Hashable, Codable {
         )
     }
 
+    private static func sampleChecklist(
+        completedTitles: Set<String>,
+        customTitles: [String] = []
+    ) -> [ExamChecklistItem] {
+        let presetItems = ExamChecklistItem.defaultItems.map { item in
+            var updated = item
+            updated.isCompleted = completedTitles.contains(item.title)
+            return updated
+        }
+        let customItems = customTitles.map { title in
+            ExamChecklistItem(
+                title: title,
+                isCompleted: completedTitles.contains(title),
+                isPreset: false
+            )
+        }
+        return presetItems + customItems
+    }
+
+    private static func sampleDocuments(
+        _ titles: [String],
+        completedTitles: Set<String> = []
+    ) -> [ExamRequiredDocument] {
+        titles.map { title in
+            ExamRequiredDocument(title: title, isCompleted: completedTitles.contains(title))
+        }
+    }
+
+    private static func sampleSchedule(_ title: String, year: Int, month: Int, day: Int) -> ExamCustomScheduleItem {
+        ExamCustomScheduleItem(
+            id: UUID(),
+            title: title,
+            date: .from(year: year, month: month, day: day)
+        )
+    }
+
     // Keep these fixtures in sync whenever university or exam-option input fields change.
     static var samples: [UniversityChoice] {
         [
@@ -279,10 +315,16 @@ struct UniversityChoice: Identifiable, Hashable, Codable {
                         externalEnglishSubjects: [
                             SubjectScore(subject: "英検CSE 2300以上", score: "20点")
                         ],
+                        externalEnglishMemo: "英検CSE 2300以上は20点加点。共通テスト英語との合計は200点を上限とする。",
+                        commonTestBorderRate: "72",
                         minimumPassingScore: "365/500点",
                         acceptanceRatio: "2.3倍",
                         capacity: "35名",
-                        memo: "共通テストの自己採点後に出願内容を最終確認"
+                        memo: "共通テストの自己採点後に出願内容を最終確認",
+                        checklistItems: sampleChecklist(completedTitles: ["募集要項を確認", "出願サイト登録"]),
+                        customScheduleItems: [
+                            sampleSchedule("成績請求票を取り寄せ", year: 2026, month: 12, day: 18)
+                        ]
                     ),
                     ExamOption(
                         faculty: "経済学部",
@@ -310,10 +352,60 @@ struct UniversityChoice: Identifiable, Hashable, Codable {
                         externalEnglishSubjects: [
                             SubjectScore(subject: "英検2級以上", score: "10点")
                         ],
+                        externalEnglishMemo: "英検2級以上は英語の得点に10点加点。",
                         minimumPassingScore: "378/500点",
                         acceptanceRatio: "2.6倍",
                         capacity: "80名",
-                        memo: "英語の配点が高いので直前期に重点確認"
+                        memo: "英語の配点が高いので直前期に重点確認",
+                        checklistItems: sampleChecklist(completedTitles: ["募集要項を確認"]),
+                        customScheduleItems: [
+                            sampleSchedule("過去問2周目を開始", year: 2027, month: 1, day: 10)
+                        ]
+                    ),
+                    ExamOption(
+                        isHidden: true,
+                        faculty: "国際学部",
+                        method: "英語外部利用方式",
+                        admissionCategory: .general,
+                        deviation: 61.5,
+                        examDate: .from(year: 2027, month: 2, day: 12),
+                        applicationStart: .from(year: 2027, month: 1, day: 5),
+                        applicationEnd: .from(year: 2027, month: 1, day: 24),
+                        paymentDeadline: .from(year: 2027, month: 1, day: 25),
+                        documentMailingDeadline: .from(year: 2027, month: 1, day: 24),
+                        documentMailingDeadlineRule: .postmarkAccepted,
+                        requiredDocuments: "調査書、英語資格証明書、写真、志望理由書",
+                        requiredDocumentItems: sampleDocuments(
+                            ["調査書", "英語資格証明書", "写真", "志望理由書"],
+                            completedTitles: ["写真"]
+                        ),
+                        resultDate: .from(year: 2027, month: 2, day: 20),
+                        admissionFeeDeadline: .from(year: 2027, month: 2, day: 27),
+                        tuitionDeadline: .from(year: 2027, month: 3, day: 10),
+                        guidelineURL: "",
+                        applicationURL: "",
+                        subjects: [
+                            SubjectScore(subject: "国語", score: "150点"),
+                            SubjectScore(subject: "小論文", score: "100点")
+                        ],
+                        commonTestSubjects: [],
+                        externalEnglishSubjects: [
+                            SubjectScore(subject: "英検準1級", score: "150点"),
+                            SubjectScore(subject: "TEAP 300以上", score: "140点")
+                        ],
+                        externalEnglishMemo: "英検とTEAPのうち高い換算点を採用。証明書は原本提出。",
+                        minimumPassingScore: "292",
+                        acceptanceRatio: "3.8倍",
+                        capacity: "24名",
+                        memo: "比較検討中のため非表示。英語資格の有効期限を確認する。",
+                        checklistItems: sampleChecklist(
+                            completedTitles: ["募集要項を確認", "英語資格の有効期限を確認"],
+                            customTitles: ["英語資格の有効期限を確認"]
+                        ),
+                        customScheduleItems: [
+                            sampleSchedule("英語資格証明書を発行申請", year: 2026, month: 12, day: 15),
+                            sampleSchedule("志望理由書の添削", year: 2027, month: 1, day: 12)
+                        ]
                     )
                 ]
             ),
@@ -363,10 +455,49 @@ struct UniversityChoice: Identifiable, Hashable, Codable {
                         externalEnglishSubjects: [
                             SubjectScore(subject: "TEAP 225以上", score: "15点")
                         ],
+                        externalEnglishMemo: "TEAP 225以上は15点、英検準1級は20点として高い方を採用。",
+                        commonTestBorderRate: "68",
                         minimumPassingScore: "352/500点",
                         acceptanceRatio: "3.1倍",
                         capacity: "45名",
-                        memo: "英語はリーディングとリスニングを合算"
+                        memo: "英語はリーディングとリスニングを合算",
+                        checklistItems: sampleChecklist(completedTitles: ["募集要項を確認", "出願サイト登録", "出願"]),
+                        customScheduleItems: [
+                            sampleSchedule("調査書を受け取る", year: 2027, month: 1, day: 8)
+                        ]
+                    ),
+                    ExamOption(
+                        faculty: "法学部",
+                        method: "一般B方式",
+                        admissionCategory: .general,
+                        deviation: 59.5,
+                        examDate: .from(year: 2027, month: 2, day: 17),
+                        applicationStart: .from(year: 2027, month: 1, day: 6),
+                        applicationEnd: .from(year: 2027, month: 1, day: 28),
+                        paymentDeadline: .from(year: 2027, month: 1, day: 28),
+                        documentMailingDeadline: .from(year: 2027, month: 1, day: 28),
+                        documentMailingDeadlineRule: .mustArrive,
+                        requiredDocuments: "調査書、志願票、写真、活動報告書",
+                        resultDate: .from(year: 2027, month: 2, day: 24),
+                        admissionFeeDeadline: .from(year: 2027, month: 3, day: 3),
+                        tuitionDeadline: .from(year: 2027, month: 3, day: 12),
+                        guidelineURL: "https://nyushi.sakuraoka-u.example/law/general-b.pdf",
+                        applicationURL: "https://entry.sakuraoka-u.example/",
+                        subjects: [
+                            SubjectScore(subject: "英語", score: "150点"),
+                            SubjectScore(subject: "国語", score: "150点"),
+                            SubjectScore(subject: "日本史", score: "100点")
+                        ],
+                        commonTestSubjects: [],
+                        externalEnglishSubjects: [],
+                        minimumPassingScore: "286",
+                        acceptanceRatio: "3.4倍",
+                        capacity: "55名",
+                        memo: "国語の配点が高い方式。過去問の時間配分を確認する",
+                        checklistItems: sampleChecklist(completedTitles: ["募集要項を確認"]),
+                        customScheduleItems: [
+                            sampleSchedule("受験票公開予定", year: 2027, month: 2, day: 8)
+                        ]
                     )
                 ]
             ),
@@ -423,10 +554,16 @@ struct UniversityChoice: Identifiable, Hashable, Codable {
                         externalEnglishSubjects: [
                             SubjectScore(subject: "英検準1級", score: "30点")
                         ],
+                        externalEnglishMemo: "英検準1級は個別試験の英語に30点加点。",
+                        commonTestBorderRate: "78",
                         minimumPassingScore: "742/1400点",
                         acceptanceRatio: "2.1倍",
                         capacity: "60名",
-                        memo: "合格発表から入学金締切までが短い"
+                        memo: "合格発表から入学金締切までが短い",
+                        checklistItems: sampleChecklist(completedTitles: ["募集要項を確認", "当日の行き方を確認"]),
+                        customScheduleItems: [
+                            sampleSchedule("ホテル予約の確認", year: 2027, month: 2, day: 10)
+                        ]
                     ),
                     ExamOption(
                         faculty: "教育学部",
@@ -462,10 +599,178 @@ struct UniversityChoice: Identifiable, Hashable, Codable {
                             SubjectScore(subject: "生物", score: "100点"),
                             SubjectScore(subject: "情報I", score: "100点")
                         ],
+                        commonTestBorderRate: "76",
                         minimumPassingScore: "718/1300点",
                         acceptanceRatio: "2.8倍",
                         capacity: "40名",
-                        memo: "面接用に活動報告書の内容を整理しておく"
+                        memo: "面接用に活動報告書の内容を整理しておく",
+                        checklistItems: sampleChecklist(completedTitles: ["募集要項を確認"]),
+                        customScheduleItems: [
+                            sampleSchedule("面接練習", year: 2027, month: 2, day: 18)
+                        ]
+                    ),
+                    ExamOption(
+                        faculty: "法学部",
+                        method: "後期日程",
+                        admissionCategory: .general,
+                        deviation: 66,
+                        examDate: .from(year: 2027, month: 3, day: 12),
+                        applicationStart: .from(year: 2027, month: 1, day: 18),
+                        applicationEnd: .from(year: 2027, month: 2, day: 3),
+                        paymentDeadline: .from(year: 2027, month: 2, day: 3),
+                        documentMailingDeadline: .from(year: 2027, month: 2, day: 3),
+                        documentMailingDeadlineRule: .mustArrive,
+                        requiredDocuments: "調査書、志願票、共通テスト成績請求票、志望理由書",
+                        resultDate: .from(year: 2027, month: 3, day: 21),
+                        admissionFeeDeadline: .from(year: 2027, month: 3, day: 26),
+                        tuitionDeadline: .from(year: 2027, month: 3, day: 31),
+                        guidelineURL: "https://admissions.toto-u.example/law/later-term.pdf",
+                        applicationURL: "https://entry.toto-u.example/",
+                        subjects: [
+                            SubjectScore(subject: "小論文", score: "200点"),
+                            SubjectScore(subject: "面接", score: "100点")
+                        ],
+                        commonTestSubjects: [
+                            SubjectScore(subject: "英語", score: "200点"),
+                            SubjectScore(subject: "国語", score: "200点"),
+                            SubjectScore(subject: "社会", score: "200点"),
+                            SubjectScore(subject: "数学", score: "200点"),
+                            SubjectScore(subject: "情報I", score: "100点")
+                        ],
+                        externalEnglishSubjects: [],
+                        commonTestBorderRate: "80",
+                        minimumPassingScore: "706",
+                        acceptanceRatio: "4.2倍",
+                        capacity: "18名",
+                        memo: "後期日程。小論文と面接の準備を優先する",
+                        checklistItems: sampleChecklist(completedTitles: ["募集要項を確認", "当日の行き方を確認"]),
+                        customScheduleItems: [
+                            sampleSchedule("小論文添削の最終提出", year: 2027, month: 3, day: 5)
+                        ]
+                    )
+                ]
+            ),
+            UniversityChoice(
+                name: "北浜市立大学",
+                nameKana: "きたはましりつだいがく",
+                universityType: .nationalPublic,
+                color: .amber,
+                preferenceRank: 4,
+                isHidden: true,
+                officialAdmissionsURL: "https://admissions.kitahama-u.example/",
+                admissionsGuidelineURL: "https://admissions.kitahama-u.example/guide-2027.pdf",
+                applicationURL: "https://entry.kitahama-u.example/",
+                customLinks: [
+                    UniversityResourceLink(
+                        name: "学部紹介",
+                        url: "https://www.kitahama-u.example/faculty/"
+                    ),
+                    UniversityResourceLink(
+                        name: "試験会場案内",
+                        url: "https://admissions.kitahama-u.example/access/"
+                    )
+                ],
+                passnaviURL: "https://passnavi.example/kitahama",
+                examOptions: [
+                    ExamOption(
+                        faculty: "情報科学部",
+                        method: "共テ単独6科目型",
+                        admissionCategory: .commonTestOnly,
+                        deviation: 56.5,
+                        examDate: nil,
+                        applicationStart: .from(year: 2027, month: 1, day: 12),
+                        applicationEnd: .from(year: 2027, month: 1, day: 30),
+                        paymentDeadline: .from(year: 2027, month: 1, day: 30),
+                        documentMailingDeadline: .from(year: 2027, month: 1, day: 30),
+                        documentMailingDeadlineRule: .postmarkAccepted,
+                        requiredDocuments: "調査書、志願票、共通テスト成績請求票、写真",
+                        requiredDocumentItems: sampleDocuments(
+                            ["調査書", "志願票", "共通テスト成績請求票", "写真"],
+                            completedTitles: ["写真"]
+                        ),
+                        resultDate: .from(year: 2027, month: 2, day: 16),
+                        admissionFeeDeadline: .from(year: 2027, month: 2, day: 24),
+                        tuitionDeadline: .from(year: 2027, month: 3, day: 10),
+                        guidelineURL: "",
+                        applicationURL: "",
+                        subjects: [],
+                        commonTestSubjects: [
+                            SubjectScore(subject: "英語（リーディング）", score: "100点"),
+                            SubjectScore(subject: "英語（リスニング）", score: "100点"),
+                            SubjectScore(subject: "現代文", score: "110点"),
+                            SubjectScore(subject: "古文", score: "45点"),
+                            SubjectScore(subject: "漢文", score: "45点"),
+                            SubjectScore(subject: "数学", score: "200点"),
+                            SubjectScore(subject: "物理", score: "100点"),
+                            SubjectScore(subject: "化学", score: "100点"),
+                            SubjectScore(subject: "社会", score: "100点"),
+                            SubjectScore(subject: "情報I", score: "100点")
+                        ],
+                        externalEnglishSubjects: [],
+                        commonTestBorderRate: "69",
+                        minimumPassingScore: "724",
+                        acceptanceRatio: "2.7倍",
+                        capacity: "30名",
+                        memo: "共通テスト自己採点後に出願を再検討する候補。",
+                        checklistItems: sampleChecklist(
+                            completedTitles: ["募集要項を確認", "共通テストの換算表を確認"],
+                            customTitles: ["共通テストの換算表を確認"]
+                        ),
+                        customScheduleItems: [
+                            sampleSchedule("共テ換算点を試算", year: 2027, month: 1, day: 18)
+                        ]
+                    ),
+                    ExamOption(
+                        faculty: "情報科学部",
+                        method: "前期日程",
+                        admissionCategory: .general,
+                        deviation: 57.5,
+                        examDate: .from(year: 2027, month: 2, day: 25),
+                        applicationStart: .from(year: 2027, month: 1, day: 18),
+                        applicationEnd: .from(year: 2027, month: 2, day: 3),
+                        paymentDeadline: .from(year: 2027, month: 2, day: 3),
+                        documentMailingDeadline: .from(year: 2027, month: 2, day: 3),
+                        documentMailingDeadlineRule: .mustArrive,
+                        requiredDocuments: "調査書、志願票、共通テスト成績請求票、活動実績書、写真",
+                        requiredDocumentItems: sampleDocuments(
+                            ["調査書", "志願票", "共通テスト成績請求票", "活動実績書", "写真"],
+                            completedTitles: ["活動実績書", "写真"]
+                        ),
+                        resultDate: .from(year: 2027, month: 3, day: 7),
+                        admissionFeeDeadline: .from(year: 2027, month: 3, day: 14),
+                        tuitionDeadline: .from(year: 2027, month: 3, day: 24),
+                        guidelineURL: "",
+                        applicationURL: "",
+                        subjects: [
+                            SubjectScore(subject: "数学", score: "300点"),
+                            SubjectScore(subject: "英語", score: "150点"),
+                            SubjectScore(subject: "情報", score: "150点")
+                        ],
+                        commonTestSubjects: [
+                            SubjectScore(subject: "英語", score: "200点"),
+                            SubjectScore(subject: "国語", score: "200点"),
+                            SubjectScore(subject: "数学", score: "200点"),
+                            SubjectScore(subject: "理科", score: "200点"),
+                            SubjectScore(subject: "社会", score: "100点"),
+                            SubjectScore(subject: "情報I", score: "100点")
+                        ],
+                        externalEnglishSubjects: [
+                            SubjectScore(subject: "英検準1級", score: "25点")
+                        ],
+                        externalEnglishMemo: "英検準1級は個別試験の英語へ25点加点。加点後も150点を上限とする。",
+                        commonTestBorderRate: "71",
+                        minimumPassingScore: "846",
+                        acceptanceRatio: "3.6倍",
+                        capacity: "42名",
+                        memo: "候補から外したため大学ごと非表示。数学の記述対策が必要。",
+                        checklistItems: sampleChecklist(
+                            completedTitles: ["募集要項を確認", "出願サイト登録", "活動実績書を先生に確認"],
+                            customTitles: ["活動実績書を先生に確認", "PC利用可否を確認"]
+                        ),
+                        customScheduleItems: [
+                            sampleSchedule("活動実績書の校内確認", year: 2027, month: 1, day: 20),
+                            sampleSchedule("試験会場までの経路確認", year: 2027, month: 2, day: 15)
+                        ]
                     )
                 ]
             )
@@ -790,6 +1095,212 @@ struct ExamOption: Identifiable, Hashable, Codable {
     }
 }
 
+enum MockExamJudgmentGrade: String, CaseIterable, Identifiable, Codable {
+    case a = "A判定"
+    case b = "B判定"
+    case c = "C判定"
+    case d = "D判定"
+    case e = "E判定"
+
+    var id: String { rawValue }
+}
+
+struct MockExamJudgment: Identifiable, Hashable, Codable {
+    var id = UUID()
+    var universityID: UUID
+    var examOptionID: UUID
+    var universityName: String
+    var examOptionName: String
+    var grade: MockExamJudgmentGrade
+}
+
+struct MockExamResult: Identifiable, Hashable, Codable {
+    var id = UUID()
+    var name: String
+    var date: Date
+    var deviation: Double
+    var isCommonTestMock: Bool
+    var commonTestScoreRate: Double?
+    var judgments: [MockExamJudgment]
+
+    static func blank() -> MockExamResult {
+        MockExamResult(
+            name: "",
+            date: Date(),
+            deviation: 60,
+            isCommonTestMock: false,
+            commonTestScoreRate: nil,
+            judgments: []
+        )
+    }
+
+    static func samples(universities: [UniversityChoice]) -> [MockExamResult] {
+        func judgment(
+            universityName: String,
+            method: String,
+            faculty: String? = nil,
+            grade: MockExamJudgmentGrade
+        ) -> MockExamJudgment? {
+            guard let university = universities.first(where: { $0.name == universityName }),
+                  let option = university.examOptions.first(where: {
+                      $0.method == method && (faculty == nil || $0.faculty == faculty)
+                  }) else {
+                return nil
+            }
+            return MockExamJudgment(
+                universityID: university.id,
+                examOptionID: option.id,
+                universityName: university.name,
+                examOptionName: option.title,
+                grade: grade
+            )
+        }
+
+        return [
+            MockExamResult(
+                name: "進研共通テスト模試",
+                date: Calendar.current.date(from: DateComponents(year: 2026, month: 4, day: 26)) ?? Date(),
+                deviation: 56.9,
+                isCommonTestMock: true,
+                commonTestScoreRate: 66.0,
+                judgments: [
+                    judgment(universityName: "青葉大学", method: "一般A方式", grade: .d),
+                    judgment(universityName: "桜丘大学", method: "共テ利用前期", grade: .c),
+                    judgment(universityName: "東都大学", method: "前期日程", faculty: "文学部", grade: .e),
+                    judgment(universityName: "北浜市立大学", method: "共テ単独6科目型", grade: .b)
+                ].compactMap { $0 }
+            ),
+            MockExamResult(
+                name: "駿台全国模試",
+                date: Calendar.current.date(from: DateComponents(year: 2026, month: 6, day: 7)) ?? Date(),
+                deviation: 58.4,
+                isCommonTestMock: false,
+                commonTestScoreRate: nil,
+                judgments: [
+                    judgment(universityName: "青葉大学", method: "一般A方式", grade: .c),
+                    judgment(universityName: "桜丘大学", method: "一般B方式", grade: .b),
+                    judgment(universityName: "東都大学", method: "前期日程", faculty: "文学部", grade: .d),
+                    judgment(universityName: "青葉大学", method: "英語外部利用方式", grade: .c)
+                ].compactMap { $0 }
+            ),
+            MockExamResult(
+                name: "全統記述模試",
+                date: Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 13)) ?? Date(),
+                deviation: 60.7,
+                isCommonTestMock: false,
+                commonTestScoreRate: nil,
+                judgments: [
+                    judgment(universityName: "青葉大学", method: "一般A方式", grade: .b),
+                    judgment(universityName: "桜丘大学", method: "一般B方式", grade: .a),
+                    judgment(universityName: "東都大学", method: "前期日程", faculty: "文学部", grade: .c),
+                    judgment(universityName: "北浜市立大学", method: "前期日程", grade: .b)
+                ].compactMap { $0 }
+            ),
+            MockExamResult(
+                name: "全統共通テスト模試",
+                date: Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 18)) ?? Date(),
+                deviation: 61.8,
+                isCommonTestMock: true,
+                commonTestScoreRate: 74.0,
+                judgments: [
+                    judgment(universityName: "青葉大学", method: "共通テスト利用3科目型", grade: .b),
+                    judgment(universityName: "桜丘大学", method: "共テ利用前期", grade: .b),
+                    judgment(universityName: "東都大学", method: "前期日程", faculty: "文学部", grade: .c),
+                    judgment(universityName: "青葉大学", method: "英語外部利用方式", grade: .b),
+                    judgment(universityName: "北浜市立大学", method: "共テ単独6科目型", grade: .a)
+                ].compactMap { $0 }
+            )
+        ]
+    }
+}
+
+enum MockExamResultPersistence {
+    private static let key = "uniexam.mockExamResults.v1"
+    private static let sampleVersionKey = "uniexam.mockExamResults.sampleVersion"
+    private static let currentSampleVersion = 4
+
+    static func load(universities: [UniversityChoice]) -> [MockExamResult] {
+        if let data = UserDefaults.standard.data(forKey: key),
+           let results = try? JSONDecoder().decode([MockExamResult].self, from: data) {
+            let installedVersion = UserDefaults.standard.integer(forKey: sampleVersionKey)
+            if installedVersion < currentSampleVersion {
+                let refreshedResults: [MockExamResult]
+                if isLegacySample(results) {
+                    refreshedResults = MockExamResult.samples(universities: universities)
+                } else {
+                    refreshedResults = refreshBundledSampleJudgments(results, universities: universities)
+                }
+                save(refreshedResults)
+                UserDefaults.standard.set(currentSampleVersion, forKey: sampleVersionKey)
+                return refreshedResults
+            }
+            UserDefaults.standard.set(currentSampleVersion, forKey: sampleVersionKey)
+            return results
+        }
+
+        let samples = MockExamResult.samples(universities: universities)
+        save(samples)
+        UserDefaults.standard.set(currentSampleVersion, forKey: sampleVersionKey)
+        return samples
+    }
+
+    static func save(_ results: [MockExamResult]) {
+        guard let data = try? JSONEncoder().encode(results) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
+
+    private static func isLegacySample(_ results: [MockExamResult]) -> Bool {
+        guard results.count == 1, let result = results.first else { return false }
+        return result.name == "全統共通テスト模試"
+            && abs(result.deviation - 61.8) < 0.001
+            && result.isCommonTestMock
+            && abs((result.commonTestScoreRate ?? 0) - 74.0) < 0.001
+    }
+
+    private static func refreshBundledSampleJudgments(
+        _ results: [MockExamResult],
+        universities: [UniversityChoice]
+    ) -> [MockExamResult] {
+        let currentSamples = MockExamResult.samples(universities: universities)
+        let containsBundledSample = results.contains { result in
+            currentSamples.contains { sample in
+                sample.name == result.name
+                    && Calendar.current.isDate(sample.date, inSameDayAs: result.date)
+                    && abs(sample.deviation - result.deviation) < 0.001
+            }
+        }
+        guard containsBundledSample else { return results }
+
+        var refreshedResults = results.map { result in
+            guard let sample = currentSamples.first(where: {
+                $0.name == result.name
+                    && Calendar.current.isDate($0.date, inSameDayAs: result.date)
+                    && abs($0.deviation - result.deviation) < 0.001
+            }) else {
+                return result
+            }
+
+            var refreshed = result
+            for judgment in sample.judgments where !refreshed.judgments.contains(where: {
+                $0.examOptionID == judgment.examOptionID
+            }) {
+                refreshed.judgments.append(judgment)
+            }
+            return refreshed
+        }
+
+        for sample in currentSamples where !refreshedResults.contains(where: {
+            $0.name == sample.name
+                && Calendar.current.isDate($0.date, inSameDayAs: sample.date)
+                && abs($0.deviation - sample.deviation) < 0.001
+        }) {
+            refreshedResults.append(sample)
+        }
+
+        return refreshedResults
+    }
+}
+
 enum UniversityPersistence {
     private static let currentKey = "uniexam.universities.v2"
     private static let legacyKey = "uniexam.schools.v1"
@@ -797,7 +1308,7 @@ enum UniversityPersistence {
     private static let sampleVersionKey = "uniexam.sampleUniversities.version"
 
     // Bump this whenever UniversityChoice.samples changes so untouched sample data refreshes.
-    private static let currentSampleVersion = 9
+    private static let currentSampleVersion = 12
 
     static func load() -> [UniversityChoice] {
         if let data = UserDefaults.standard.data(forKey: currentKey) {
@@ -875,11 +1386,40 @@ enum UniversityPersistence {
         let matchesStoredSample = defaults.data(forKey: sampleSnapshotKey) == currentData
         let matchesLegacySample = installedVersion == 0 && isUntouchedLegacySample(universities)
         guard matchesStoredSample || matchesLegacySample else {
+            let mergedUniversities = mergeMissingSampleOptions(into: universities)
+            save(mergedUniversities)
             defaults.set(currentSampleVersion, forKey: sampleVersionKey)
-            return universities
+            return mergedUniversities
         }
 
         return installCurrentSamples()
+    }
+
+    private static func mergeMissingSampleOptions(
+        into universities: [UniversityChoice]
+    ) -> [UniversityChoice] {
+        var merged = universities
+        let sampleNames = Set(UniversityChoice.samples.map(\.name))
+        let containsBundledUniversity = merged.contains {
+            sampleNames.contains($0.name) && $0.officialAdmissionsURL.contains(".example")
+        }
+        guard containsBundledUniversity else { return universities }
+
+        for sample in UniversityChoice.samples {
+            if let index = merged.firstIndex(where: {
+                $0.name == sample.name && $0.officialAdmissionsURL.contains(".example")
+            }) {
+                for option in sample.examOptions where !merged[index].examOptions.contains(where: {
+                    $0.faculty == option.faculty && $0.method == option.method
+                }) {
+                    merged[index].examOptions.append(option)
+                }
+            } else {
+                merged.append(sample)
+            }
+        }
+
+        return merged
     }
 
     @discardableResult

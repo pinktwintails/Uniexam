@@ -72,7 +72,11 @@ struct UniversityListView: View {
                                 NavigationLink {
                                     UniversityDetailView(
                                         university: universityBinding(for: university.id),
-                                        customEvents: $customEvents
+                                        customEvents: $customEvents,
+                                        onDeleteUniversity: {
+                                            customEvents.removeAll { $0.universityID == university.id }
+                                            universities.removeAll { $0.id == university.id }
+                                        }
                                     )
                                 } label: {
                                     UniversityRow(university: university)
@@ -84,7 +88,13 @@ struct UniversityListView: View {
                                 NavigationLink {
                                     SchoolDetailView(
                                         school: optionBinding(for: school),
-                                        fixedUniversity: universities.first { $0.id == school.universityID }
+                                        fixedUniversity: universities.first { $0.id == school.universityID },
+                                        onDelete: {
+                                            guard let universityIndex = universities.firstIndex(where: {
+                                                $0.id == school.universityID
+                                            }) else { return }
+                                            universities[universityIndex].examOptions.removeAll { $0.id == school.id }
+                                        }
                                     )
                                 } label: {
                                     ExamOptionListRow(school: school)
@@ -693,14 +703,31 @@ struct ExamOptionListRow: View {
 }
 
 struct UniversityDetailView: View {
+    private enum UniversityDestructiveAction {
+        case hide
+        case delete
+
+        var verb: String {
+            switch self {
+            case .hide: "非表示"
+            case .delete: "削除"
+            }
+        }
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Binding var university: UniversityChoice
     @Binding var customEvents: [UserCalendarEvent]
+    let onDeleteUniversity: () -> Void
 
     @State private var showingUniversityEditor = false
     @State private var showingOptionEditor = false
     @State private var optionPendingDeletion: ExamOption?
-    @State private var showingHideConfirmation = false
+    @State private var optionPendingHide: ExamOption?
+    @State private var showingUniversityActionMenu = false
+    @State private var pendingUniversityAction: UniversityDestructiveAction?
+    @State private var showingUniversityImpactConfirmation = false
+    @State private var showingUniversityFinalConfirmation = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -708,25 +735,15 @@ struct UniversityDetailView: View {
                 title: "大学詳細",
                 subtitle: university.name,
                 leadingSystemImage: "chevron.left",
-                trailingSystemImage: "square.and.pencil",
+                trailingSystemImage: "ellipsis",
                 showsSidebar: false,
                 leadingAction: { dismiss() },
-                trailingAction: { showingUniversityEditor = true }
+                trailingAction: { showingUniversityActionMenu = true }
             )
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     UniversitySummaryCard(university: university)
-
-                    Button {
-                        showingHideConfirmation = true
-                    } label: {
-                        Label("この大学を非表示", systemImage: "eye.slash")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color.secondaryText)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .buttonStyle(.plain)
 
                     HStack {
                         Text("入試方式")
@@ -746,7 +763,13 @@ struct UniversityDetailView: View {
                     ForEach(university.examOptions.filter { !$0.isHidden }) { option in
                         HStack(spacing: 8) {
                             NavigationLink {
-                                SchoolDetailView(school: optionBinding(for: option.id), fixedUniversity: university)
+                                SchoolDetailView(
+                                    school: optionBinding(for: option.id),
+                                    fixedUniversity: university,
+                                    onDelete: {
+                                        university.examOptions.removeAll { $0.id == option.id }
+                                    }
+                                )
                             } label: {
                                 ExamOptionRow(option: option, color: university.color.color)
                             }
@@ -755,6 +778,9 @@ struct UniversityDetailView: View {
                             Menu {
                                 Button { duplicate(option) } label: {
                                     Label("複製", systemImage: "plus.square.on.square")
+                                }
+                                Button(role: .destructive) { optionPendingHide = option } label: {
+                                    Label("非表示", systemImage: "archivebox")
                                 }
                                 Button(role: .destructive) { optionPendingDeletion = option } label: {
                                     Label("削除", systemImage: "trash")
@@ -787,6 +813,37 @@ struct UniversityDetailView: View {
             }
         }
         .confirmationDialog(
+            "大学の操作",
+            isPresented: $showingUniversityActionMenu,
+            titleVisibility: .visible
+        ) {
+            Button("編集") {
+                showingUniversityEditor = true
+            }
+            Button("非表示にする", role: .destructive) {
+                beginUniversityAction(.hide)
+            }
+            Button("削除する", role: .destructive) {
+                beginUniversityAction(.delete)
+            }
+        }
+        .confirmationDialog(
+            "この入試方式を非表示にしますか？",
+            isPresented: Binding(
+                get: { optionPendingHide != nil },
+                set: { if !$0 { optionPendingHide = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("非表示にする", role: .destructive) {
+                if let optionPendingHide,
+                   let index = university.examOptions.firstIndex(where: { $0.id == optionPendingHide.id }) {
+                    university.examOptions[index].isHidden = true
+                }
+                optionPendingHide = nil
+            }
+        }
+        .confirmationDialog(
             "この入試方式を削除しますか？",
             isPresented: Binding(
                 get: { optionPendingDeletion != nil },
@@ -802,15 +859,69 @@ struct UniversityDetailView: View {
             }
         }
         .confirmationDialog(
-            "この大学を非表示にしますか？",
-            isPresented: $showingHideConfirmation,
+            universityImpactTitle,
+            isPresented: $showingUniversityImpactConfirmation,
             titleVisibility: .visible
         ) {
-            Button("非表示にする", role: .destructive) {
-                university.isHidden = true
-                dismiss()
+            Button("確認を続ける", role: .destructive) {
+                DispatchQueue.main.async {
+                    showingUniversityFinalConfirmation = true
+                }
             }
+            Button("キャンセル", role: .cancel) {
+                pendingUniversityAction = nil
+            }
+        } message: {
+            Text(universityImpactMessage)
         }
+        .confirmationDialog(
+            "最終確認：この大学を\(pendingUniversityAction?.verb ?? "変更")しますか？",
+            isPresented: $showingUniversityFinalConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(pendingUniversityAction?.verb ?? "実行", role: .destructive) {
+                performUniversityAction()
+            }
+            Button("キャンセル", role: .cancel) {
+                pendingUniversityAction = nil
+            }
+        } message: {
+            Text("この操作を実行してもよいか、もう一度確認してください。")
+        }
+    }
+
+    private var universityImpactTitle: String {
+        "この大学を\(pendingUniversityAction?.verb ?? "変更")しますか？"
+    }
+
+    private var universityImpactMessage: String {
+        let optionCount = university.examOptions.count
+        return switch pendingUniversityAction {
+        case .hide:
+            "登録されている入試方式\(optionCount)件も、カレンダーと戦略マップから非表示になります。"
+        case .delete:
+            "登録されている入試方式\(optionCount)件と、この大学に紐づく予定もすべて削除されます。削除は取り消せません。"
+        case nil:
+            "登録内容にも影響します。"
+        }
+    }
+
+    private func beginUniversityAction(_ action: UniversityDestructiveAction) {
+        pendingUniversityAction = action
+        showingUniversityImpactConfirmation = true
+    }
+
+    private func performUniversityAction() {
+        switch pendingUniversityAction {
+        case .hide:
+            university.isHidden = true
+        case .delete:
+            onDeleteUniversity()
+        case nil:
+            return
+        }
+        pendingUniversityAction = nil
+        dismiss()
     }
 
     private func duplicate(_ option: ExamOption) {

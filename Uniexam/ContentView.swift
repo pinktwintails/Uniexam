@@ -21,14 +21,16 @@ extension EnvironmentValues {
 
 struct ContentView: View {
     @State private var universities: [UniversityChoice]
-    @State private var userDeviation: Double
+    @State private var mockExamResults: [MockExamResult]
     @State private var customCalendarEvents: [UserCalendarEvent]
     @State private var showingSidebar = false
     @State private var showingHiddenItems = false
+    @State private var showingMockExamResults = false
 
     init() {
-        _universities = State(initialValue: UniversityPersistence.load())
-        _userDeviation = State(initialValue: UserProfilePersistence.loadDeviation())
+        let loadedUniversities = UniversityPersistence.load()
+        _universities = State(initialValue: loadedUniversities)
+        _mockExamResults = State(initialValue: MockExamResultPersistence.load(universities: loadedUniversities))
         _customCalendarEvents = State(initialValue: UserCalendarEventPersistence.load())
     }
 
@@ -64,7 +66,7 @@ struct ContentView: View {
                         Label("カレンダー", systemImage: "calendar")
                     }
 
-                StrategyMapView(schools: schools, userDeviation: $userDeviation)
+                StrategyMapView(schools: schools, userDeviation: latestMockExamDeviation)
                     .tabItem {
                         Label("戦略", systemImage: "chart.xyaxis.line")
                     }
@@ -83,6 +85,10 @@ struct ContentView: View {
                     onShowHiddenItems: {
                         closeSidebar()
                         showingHiddenItems = true
+                    },
+                    onShowMockExamResults: {
+                        closeSidebar()
+                        showingMockExamResults = true
                     }
                 )
                     .frame(width: 304)
@@ -99,11 +105,14 @@ struct ContentView: View {
         .sheet(isPresented: $showingHiddenItems) {
             HiddenItemsView(universities: $universities)
         }
+        .sheet(isPresented: $showingMockExamResults) {
+            MockExamResultsView(results: $mockExamResults, universities: universities)
+        }
         .onChange(of: universities) { _, newValue in
             UniversityPersistence.save(newValue)
         }
-        .onChange(of: userDeviation) { _, newValue in
-            UserProfilePersistence.saveDeviation(newValue)
+        .onChange(of: mockExamResults) { _, newValue in
+            MockExamResultPersistence.save(newValue)
         }
         .onChange(of: customCalendarEvents) { _, newValue in
             UserCalendarEventPersistence.save(newValue)
@@ -115,11 +124,18 @@ struct ContentView: View {
             showingSidebar = false
         }
     }
+
+    private var latestMockExamDeviation: Double? {
+        mockExamResults.max { lhs, rhs in
+            lhs.date < rhs.date
+        }?.deviation
+    }
 }
 
 struct AppSidebarView: View {
     var onClose: () -> Void
     var onShowHiddenItems: () -> Void
+    var onShowMockExamResults: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -167,7 +183,14 @@ struct AppSidebarView: View {
                     sidebarRow(title: "非表示の項目を見る", systemImage: "archivebox")
                 }
                 .buttonStyle(.plain)
-                sidebarRow(title: "模試結果登録", systemImage: "chart.bar.doc.horizontal")
+                Button(action: onShowMockExamResults) {
+                    sidebarRow(title: "模試結果登録", systemImage: "chart.bar.doc.horizontal")
+                }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("模試結果登録")
+                .accessibilityAddTraits(.isButton)
 
                 if let contactURL = URL(string: "https://app.notion.com/p/b7bfd12bf238821c8c210131da435e65?pvs=106") {
                     Link(destination: contactURL) {
@@ -1152,7 +1175,12 @@ struct SchoolListView: View {
                     LazyVStack(spacing: 12) {
                         ForEach(sortedSchools) { school in
                             NavigationLink {
-                                SchoolDetailView(school: binding(for: school))
+                                SchoolDetailView(
+                                    school: binding(for: school),
+                                    onDelete: {
+                                        schools.removeAll { $0.id == school.id }
+                                    }
+                                )
                             } label: {
                                 SchoolRow(school: school)
                             }
@@ -1327,9 +1355,12 @@ struct SchoolDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var school: ExamSchool
     var fixedUniversity: UniversityChoice? = nil
+    var onDelete: (() -> Void)? = nil
     @State private var showingEditSheet = false
     @State private var selectedTab = DetailTab.information
+    @State private var showingActionMenu = false
     @State private var showingHideConfirmation = false
+    @State private var showingDeleteConfirmation = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1337,25 +1368,15 @@ struct SchoolDetailView: View {
                 title: "詳細",
                 subtitle: school.name,
                 leadingSystemImage: "chevron.left",
-                trailingSystemImage: "square.and.pencil",
+                trailingSystemImage: "ellipsis",
                 showsSidebar: false,
                 leadingAction: { dismiss() },
-                trailingAction: { showingEditSheet = true }
+                trailingAction: { showingActionMenu = true }
             )
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     SchoolDetailSummary(school: school)
-
-                    Button {
-                        showingHideConfirmation = true
-                    } label: {
-                        Label("この入試方式を非表示", systemImage: "eye.slash")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color.secondaryText)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .buttonStyle(.plain)
 
                     if let nextEvent {
                         NextExamEventBanner(event: nextEvent, tint: school.color.color)
@@ -1444,6 +1465,23 @@ struct SchoolDetailView: View {
             }
         }
         .confirmationDialog(
+            "入試方式の操作",
+            isPresented: $showingActionMenu,
+            titleVisibility: .visible
+        ) {
+            Button("編集") {
+                showingEditSheet = true
+            }
+            Button("非表示にする", role: .destructive) {
+                showingHideConfirmation = true
+            }
+            if onDelete != nil {
+                Button("削除する", role: .destructive) {
+                    showingDeleteConfirmation = true
+                }
+            }
+        }
+        .confirmationDialog(
             "この入試方式を非表示にしますか？",
             isPresented: $showingHideConfirmation,
             titleVisibility: .visible
@@ -1452,6 +1490,22 @@ struct SchoolDetailView: View {
                 school.isHidden = true
                 dismiss()
             }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("カレンダーと戦略マップからも非表示になります。サイドバーの「非表示の項目を見る」から復元できます。")
+        }
+        .confirmationDialog(
+            "この入試方式を削除しますか？",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("削除", role: .destructive) {
+                onDelete?()
+                dismiss()
+            }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("この方式だけを削除します。削除した情報は元に戻せません。")
         }
     }
 
@@ -4870,7 +4924,7 @@ struct CalendarFilterSheet: View {
 
 struct StrategyMapView: View {
     var schools: [ExamSchool]
-    @Binding var userDeviation: Double
+    var userDeviation: Double?
     @State private var selectedCategory: ExamOptionCategory = .general
     @State private var chartZoomScale = 1.0
     @State private var committedChartZoomScale = 1.0
@@ -4891,7 +4945,6 @@ struct StrategyMapView: View {
                         .accessibilityLabel("戦略マップの入試方式")
 
                         if selectedCategory == .general {
-                            UserDeviationEditor(userDeviation: $userDeviation)
                             generalStrategyCard
                         } else {
                             commonTestStrategyCard
@@ -4913,16 +4966,34 @@ struct StrategyMapView: View {
                 .font(.caption)
                 .foregroundStyle(Color.secondaryText)
 
-            HStack(spacing: 14) {
-                StrategyBandLegendItem(title: "安全校", color: .schoolAmber)
-                StrategyBandLegendItem(title: "相応校", color: .schoolMint)
-                StrategyBandLegendItem(title: "チャレンジ校", color: .schoolCoral)
+            if let userDeviation {
+                Label {
+                    Text("最新模試の偏差値 \(userDeviation.formatted(.number.precision(.fractionLength(1))))")
+                } icon: {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.uniexamIndigo)
+                .padding(.top, 2)
+            } else {
+                Label("模試結果を登録すると基準ラインが表示されます", systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(Color.secondaryText)
+                    .padding(.top, 2)
             }
-            .padding(.top, 4)
+
+            if userDeviation != nil {
+                HStack(spacing: 14) {
+                    StrategyBandLegendItem(title: "安全校", color: .schoolAmber)
+                    StrategyBandLegendItem(title: "相応校", color: .schoolMint)
+                    StrategyBandLegendItem(title: "チャレンジ校", color: .schoolCoral)
+                }
+                .padding(.top, 4)
+            }
 
             ScrollView(.horizontal, showsIndicators: false) {
                 StrategyChart(schools: generalSchools, userDeviation: userDeviation, yZoomScale: chartZoomScale)
-                    .frame(width: generalChartWidth, height: 430)
+                    .frame(width: generalChartWidth, height: 620)
                     .padding(.trailing, 12)
                     .simultaneousGesture(
                         MagnificationGesture()
@@ -5238,51 +5309,9 @@ private struct CommonTestStrategyChart: View {
     }
 }
 
-struct UserDeviationEditor: View {
-    @Binding var userDeviation: Double
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("自分の偏差値")
-                        .font(.headline)
-                        .foregroundStyle(Color.primaryText)
-                    Text("仮置き。あとでプロフィールや設定に移せます。")
-                        .font(.caption)
-                        .foregroundStyle(Color.secondaryText)
-                }
-
-                Spacer()
-
-                Text(String(format: "%.1f", userDeviation))
-                    .font(.title3.weight(.bold))
-                    .monospacedDigit()
-                    .foregroundStyle(Color.uniexamIndigo)
-            }
-
-            Slider(value: $userDeviation, in: 35...80, step: 0.5)
-                .tint(.uniexamIndigo)
-
-            HStack {
-                Text("35")
-                Spacer()
-                Text("目安ラインとして戦略マップに表示")
-                Spacer()
-                Text("80")
-            }
-            .font(.caption2)
-            .foregroundStyle(Color.secondaryText)
-        }
-        .padding(16)
-        .background(.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-}
-
 struct StrategyChart: View {
     var schools: [ExamSchool]
-    var userDeviation: Double
+    var userDeviation: Double?
     var yZoomScale: Double
 
     private let fullMinDeviation = 30.0
@@ -5304,19 +5333,24 @@ struct StrategyChart: View {
         let fullSpan = fullMaxDeviation - fullMinDeviation
         let visibleSpan = fullSpan / min(max(yZoomScale, 1.0), 3.5)
         let halfSpan = visibleSpan / 2
-        let center = min(max(userDeviation, fullMinDeviation + halfSpan), fullMaxDeviation - halfSpan)
+        let requestedCenter = userDeviation ?? (fullMinDeviation + fullMaxDeviation) / 2
+        let center = min(max(requestedCenter, fullMinDeviation + halfSpan), fullMaxDeviation - halfSpan)
         return (center - halfSpan)...(center + halfSpan)
     }
 
     var body: some View {
         GeometryReader { proxy in
-            let plot = CGRect(x: 42, y: 20, width: proxy.size.width - 58, height: proxy.size.height - 120)
+            let plot = CGRect(x: 62, y: 20, width: proxy.size.width - 84, height: proxy.size.height - 290)
 
             ZStack(alignment: .topLeading) {
-                schoolLevelBands(in: plot)
+                if let userDeviation {
+                    schoolLevelBands(for: userDeviation, in: plot)
+                }
                 grid(in: plot)
                 schoolTrendLine(in: plot)
-                userDeviationLine(in: plot)
+                if let userDeviation {
+                    userDeviationLine(for: userDeviation, in: plot)
+                }
 
                 ForEach(visibleExamSchools) { school in
                     if let date = school.examDate {
@@ -5333,7 +5367,7 @@ struct StrategyChart: View {
                     }
                 }
 
-                examLabels(in: plot)
+                verticalExamLabels(in: plot)
             }
         }
     }
@@ -5377,43 +5411,80 @@ struct StrategyChart: View {
         }
     }
 
-    private func examLabels(in plot: CGRect) -> some View {
+    private func verticalExamLabels(in plot: CGRect) -> some View {
         ZStack(alignment: .topLeading) {
-            ForEach(Array(visibleExamSchools.enumerated()), id: \.element.id) { index, school in
-                if let date = school.examDate {
-                    let pointX = xPosition(for: date, in: plot)
-                    let labelX = min(max(pointX, plot.minX + 58), plot.maxX - 58)
-                    let labelY = plot.maxY + 49 + CGFloat(index % 2) * 36
-
-                    Path { path in
-                        path.move(to: CGPoint(x: pointX, y: plot.maxY))
-                        path.addLine(to: CGPoint(x: pointX, y: labelY - 13))
-                        path.addLine(to: CGPoint(x: labelX, y: labelY - 13))
-                    }
-                    .stroke(school.color.color.opacity(0.28), lineWidth: 1)
-
-                    HStack(spacing: 5) {
-                        Circle()
-                            .fill(school.color.color)
-                            .frame(width: 6, height: 6)
-                        Text(date.formatted(.shortMonthDay))
-                            .fontWeight(.bold)
-                        Text(school.name)
-                            .lineLimit(1)
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(Color.primaryText)
-                    .padding(.horizontal, 7)
-                    .frame(width: 116, height: 26)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 5))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 5)
-                            .stroke(school.color.color.opacity(0.28), lineWidth: 1)
-                    }
-                    .position(x: labelX, y: labelY)
+            ForEach(examLabelDates, id: \.self) { date in
+                let dateSchools = visibleExamSchools.filter {
+                    guard let examDate = $0.examDate else { return false }
+                    return Calendar.current.isDate(examDate, inSameDayAs: date)
                 }
+                let pointX = xPosition(for: date, in: plot)
+
+                Path { path in
+                    path.move(to: CGPoint(x: pointX, y: plot.maxY))
+                    path.addLine(to: CGPoint(x: pointX, y: plot.maxY + 29))
+                }
+                .stroke(Color.secondaryText.opacity(0.28), lineWidth: 1)
+
+                VStack(spacing: 6) {
+                    Text(date.formatted(.shortMonthDay))
+                        .font(.caption2.weight(.bold))
+                        .monospacedDigit()
+                        .foregroundStyle(Color.primaryText)
+
+                    HStack(alignment: .top, spacing: 10) {
+                        ForEach(dateSchools) { school in
+                            verticalSchoolLabel(school)
+                        }
+                    }
+                }
+                .frame(width: max(100, CGFloat(dateSchools.count) * 80), height: 250, alignment: .top)
+                .position(x: pointX, y: plot.maxY + 140)
             }
         }
+    }
+
+    private var examLabelDates: [Date] {
+        let dates = visibleExamSchools.compactMap(\.examDate).map { Calendar.current.startOfDay(for: $0) }
+        return Array(Set(dates)).sorted()
+    }
+
+    private func verticalSchoolLabel(_ school: ExamSchool) -> some View {
+        VStack(spacing: 5) {
+            Rectangle()
+                .fill(school.color.color)
+                .frame(width: 26, height: 3)
+
+            HStack(alignment: .top, spacing: 5) {
+                Text(verticalText(school.name))
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(Color.primaryText)
+
+                if shouldShowFullMethod(for: school) {
+                    Text(verticalText(fullExamOptionName(for: school)))
+                        .font(.caption2)
+                        .foregroundStyle(Color.secondaryText)
+                }
+            }
+            .lineSpacing(0)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(school.name)、\(school.method)")
+    }
+
+    private func shouldShowFullMethod(for school: ExamSchool) -> Bool {
+        examSchools.filter { $0.name == school.name }.count > 1
+    }
+
+    private func fullExamOptionName(for school: ExamSchool) -> String {
+        let value = [school.faculty, school.method]
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .joined(separator: "・")
+        return value.isEmpty ? "方式未入力" : value
+    }
+
+    private func verticalText(_ value: String) -> String {
+        value.map(String.init).joined(separator: "\n")
     }
 
     private func xPosition(for date: Date, in plot: CGRect) -> CGFloat {
@@ -5427,7 +5498,7 @@ struct StrategyChart: View {
         return plot.minX + plot.width * CGFloat(progress)
     }
 
-    private func userDeviationLine(in plot: CGRect) -> some View {
+    private func userDeviationLine(for userDeviation: Double, in plot: CGRect) -> some View {
         let y = yPosition(for: userDeviation, in: plot)
 
         return ZStack(alignment: .topLeading) {
@@ -5449,7 +5520,7 @@ struct StrategyChart: View {
         }
     }
 
-    private func schoolLevelBands(in plot: CGRect) -> some View {
+    private func schoolLevelBands(for userDeviation: Double, in plot: CGRect) -> some View {
         let safeBottom = userDeviation - 7.5
         let safeTop = userDeviation - 2.5
         let matchBottom = userDeviation - 2.5
@@ -5633,19 +5704,6 @@ enum SchoolPersistence {
     static func save(_ schools: [ExamSchool]) {
         guard let data = try? JSONEncoder().encode(schools) else { return }
         UserDefaults.standard.set(data, forKey: key)
-    }
-}
-
-enum UserProfilePersistence {
-    private static let deviationKey = "uniexam.userDeviation.v1"
-
-    static func loadDeviation() -> Double {
-        let storedValue = UserDefaults.standard.double(forKey: deviationKey)
-        return storedValue == 0 ? 60 : storedValue
-    }
-
-    static func saveDeviation(_ deviation: Double) {
-        UserDefaults.standard.set(deviation, forKey: deviationKey)
     }
 }
 
