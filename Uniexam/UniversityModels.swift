@@ -328,6 +328,37 @@ struct UniversityChoice: Identifiable, Hashable, Codable {
                     ),
                     ExamOption(
                         faculty: "経済学部",
+                        method: "共通テスト利用5科目型",
+                        admissionCategory: .commonTestOnly,
+                        deviation: 61,
+                        examDate: nil,
+                        applicationStart: .from(year: 2027, month: 1, day: 5),
+                        applicationEnd: .from(year: 2027, month: 1, day: 22),
+                        paymentDeadline: .from(year: 2027, month: 1, day: 23),
+                        documentMailingDeadline: .from(year: 2027, month: 1, day: 22),
+                        documentMailingDeadlineRule: .mustArrive,
+                        requiredDocuments: "調査書、共通テスト成績請求票、写真",
+                        resultDate: .from(year: 2027, month: 2, day: 12),
+                        admissionFeeDeadline: .from(year: 2027, month: 2, day: 24),
+                        tuitionDeadline: .from(year: 2027, month: 3, day: 10),
+                        guidelineURL: "https://admissions.aoba-u.example/economics/common-test-5.pdf",
+                        applicationURL: "https://entry.aoba-u.example/",
+                        subjects: [],
+                        commonTestSubjects: [
+                            SubjectScore(subject: "英語（リーディング）", score: "100点"),
+                            SubjectScore(subject: "英語（リスニング）", score: "100点"),
+                            SubjectScore(subject: "国語", score: "200点"),
+                            SubjectScore(subject: "数学", score: "200点"),
+                            SubjectScore(subject: "社会", score: "100点")
+                        ],
+                        commonTestBorderRate: "75",
+                        minimumPassingScore: "525/700点",
+                        acceptanceRatio: "2.8倍",
+                        capacity: "20名",
+                        memo: "5科目型。3科目型より科目数が多い分、ボーダーは高め。"
+                    ),
+                    ExamOption(
+                        faculty: "経済学部",
                         method: "一般A方式",
                         admissionCategory: .general,
                         deviation: 62,
@@ -465,6 +496,36 @@ struct UniversityChoice: Identifiable, Hashable, Codable {
                         customScheduleItems: [
                             sampleSchedule("調査書を受け取る", year: 2027, month: 1, day: 8)
                         ]
+                    ),
+                    ExamOption(
+                        faculty: "法学部",
+                        method: "共テ利用後期",
+                        admissionCategory: .commonTestOnly,
+                        deviation: 56.5,
+                        examDate: nil,
+                        applicationStart: .from(year: 2027, month: 2, day: 1),
+                        applicationEnd: .from(year: 2027, month: 2, day: 10),
+                        paymentDeadline: .from(year: 2027, month: 2, day: 11),
+                        documentMailingDeadline: .from(year: 2027, month: 2, day: 10),
+                        documentMailingDeadlineRule: .postmarkAccepted,
+                        requiredDocuments: "調査書、共通テスト成績請求票",
+                        resultDate: .from(year: 2027, month: 2, day: 28),
+                        admissionFeeDeadline: .from(year: 2027, month: 3, day: 8),
+                        tuitionDeadline: .from(year: 2027, month: 3, day: 15),
+                        guidelineURL: "https://nyushi.sakuraoka-u.example/law/common-test-late.pdf",
+                        applicationURL: "https://entry.sakuraoka-u.example/",
+                        subjects: [],
+                        commonTestSubjects: [
+                            SubjectScore(subject: "英語（リーディング）", score: "100点"),
+                            SubjectScore(subject: "英語（リスニング）", score: "100点"),
+                            SubjectScore(subject: "国語", score: "200点"),
+                            SubjectScore(subject: "社会", score: "100点")
+                        ],
+                        commonTestBorderRate: "65",
+                        minimumPassingScore: "325/500点",
+                        acceptanceRatio: "4.0倍",
+                        capacity: "12名",
+                        memo: "後期募集。前期の結果を見てから出願できる方式。"
                     ),
                     ExamOption(
                         faculty: "法学部",
@@ -1100,9 +1161,25 @@ enum MockExamJudgmentGrade: String, CaseIterable, Identifiable, Codable {
     case b = "B判定"
     case c = "C判定"
     case d = "D判定"
-    case e = "E判定"
+    case f = "F判定"
 
     var id: String { rawValue }
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        if value == "E判定" {
+            self = .f
+        } else if let grade = Self(rawValue: value) {
+            self = grade
+        } else {
+            self = .f
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 struct MockExamJudgment: Identifiable, Hashable, Codable {
@@ -1166,7 +1243,7 @@ struct MockExamResult: Identifiable, Hashable, Codable {
                 judgments: [
                     judgment(universityName: "青葉大学", method: "一般A方式", grade: .d),
                     judgment(universityName: "桜丘大学", method: "共テ利用前期", grade: .c),
-                    judgment(universityName: "東都大学", method: "前期日程", faculty: "文学部", grade: .e),
+                    judgment(universityName: "東都大学", method: "前期日程", faculty: "文学部", grade: .f),
                     judgment(universityName: "北浜市立大学", method: "共テ単独6科目型", grade: .b)
                 ].compactMap { $0 }
             ),
@@ -1218,6 +1295,8 @@ enum MockExamResultPersistence {
     private static let key = "uniexam.mockExamResults.v1"
     private static let sampleVersionKey = "uniexam.mockExamResults.sampleVersion"
     private static let currentSampleVersion = 4
+    // TestFlightでは空の状態から開始する。サンプル確認時だけtrueに戻す。
+    private static let loadsBundledSamples = false
 
     static func load(universities: [UniversityChoice]) -> [MockExamResult] {
         if let data = UserDefaults.standard.data(forKey: key),
@@ -1237,6 +1316,8 @@ enum MockExamResultPersistence {
             UserDefaults.standard.set(currentSampleVersion, forKey: sampleVersionKey)
             return results
         }
+
+        guard loadsBundledSamples else { return [] }
 
         let samples = MockExamResult.samples(universities: universities)
         save(samples)
@@ -1308,7 +1389,9 @@ enum UniversityPersistence {
     private static let sampleVersionKey = "uniexam.sampleUniversities.version"
 
     // Bump this whenever UniversityChoice.samples changes so untouched sample data refreshes.
-    private static let currentSampleVersion = 12
+    private static let currentSampleVersion = 14
+    // TestFlightでは空の状態から開始する。サンプル確認時だけtrueに戻す。
+    private static let loadsBundledSamples = false
 
     static func load() -> [UniversityChoice] {
         if let data = UserDefaults.standard.data(forKey: currentKey) {
@@ -1328,6 +1411,7 @@ enum UniversityPersistence {
             return universities
         }
 
+        guard loadsBundledSamples else { return [] }
         return installCurrentSamples()
     }
 
@@ -1409,10 +1493,20 @@ enum UniversityPersistence {
             if let index = merged.firstIndex(where: {
                 $0.name == sample.name && $0.officialAdmissionsURL.contains(".example")
             }) {
-                for option in sample.examOptions where !merged[index].examOptions.contains(where: {
-                    $0.faculty == option.faculty && $0.method == option.method
-                }) {
-                    merged[index].examOptions.append(option)
+                for option in sample.examOptions {
+                    if let optionIndex = merged[index].examOptions.firstIndex(where: {
+                        $0.faculty == option.faculty && $0.method == option.method
+                    }) {
+                        if merged[index].examOptions[optionIndex].commonTestBorderRate
+                            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            merged[index].examOptions[optionIndex].commonTestBorderRate = option.commonTestBorderRate
+                        }
+                        if merged[index].examOptions[optionIndex].commonTestSubjects.isEmpty {
+                            merged[index].examOptions[optionIndex].commonTestSubjects = option.commonTestSubjects
+                        }
+                    } else {
+                        merged[index].examOptions.append(option)
+                    }
                 }
             } else {
                 merged.append(sample)

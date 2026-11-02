@@ -66,7 +66,11 @@ struct ContentView: View {
                         Label("カレンダー", systemImage: "calendar")
                     }
 
-                StrategyMapView(schools: schools, userDeviation: latestMockExamDeviation)
+                StrategyMapView(
+                    schools: schools,
+                    userDeviation: latestMockExamDeviation,
+                    mockExamResults: mockExamResults
+                )
                     .tabItem {
                         Label("戦略", systemImage: "chart.xyaxis.line")
                     }
@@ -178,7 +182,6 @@ struct AppSidebarView: View {
                 .padding(.top, 22)
 
             VStack(spacing: 4) {
-                sidebarRow(title: "アカウント設定", systemImage: "person.crop.circle")
                 Button(action: onShowHiddenItems) {
                     sidebarRow(title: "非表示の項目を見る", systemImage: "archivebox")
                 }
@@ -4925,6 +4928,7 @@ struct CalendarFilterSheet: View {
 struct StrategyMapView: View {
     var schools: [ExamSchool]
     var userDeviation: Double?
+    var mockExamResults: [MockExamResult]
     @State private var selectedCategory: ExamOptionCategory = .general
     @State private var chartZoomScale = 1.0
     @State private var committedChartZoomScale = 1.0
@@ -4960,27 +4964,18 @@ struct StrategyMapView: View {
 
     private var generalStrategyCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("入試日 × 偏差値")
+            Text("一般入試 レベル推移グラフ")
                 .font(.headline)
-            Text(generalTimelineDescription)
+
+            Text("グラフを2本指で広げたり縮めたりすると、偏差値の表示範囲を調整できます。")
                 .font(.caption)
                 .foregroundStyle(Color.secondaryText)
 
-            if let userDeviation {
-                Label {
-                    Text("最新模試の偏差値 \(userDeviation.formatted(.number.precision(.fractionLength(1))))")
-                } icon: {
-                    Image(systemName: "chart.line.uptrend.xyaxis")
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color.uniexamIndigo)
-                .padding(.top, 2)
-            } else {
-                Label("模試結果を登録すると基準ラインが表示されます", systemImage: "info.circle")
-                    .font(.caption)
-                    .foregroundStyle(Color.secondaryText)
-                    .padding(.top, 2)
-            }
+            latestDeviationSummary
+
+            Text("この偏差値や判定は最新の模試の結果を反映しています。模試の結果はサイドバーから追加・変更ができます。")
+                .font(.caption)
+                .foregroundStyle(Color.secondaryText)
 
             if userDeviation != nil {
                 HStack(spacing: 14) {
@@ -4992,8 +4987,13 @@ struct StrategyMapView: View {
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
-                StrategyChart(schools: generalSchools, userDeviation: userDeviation, yZoomScale: chartZoomScale)
-                    .frame(width: generalChartWidth, height: 620)
+                StrategyChart(
+                    schools: generalSchools,
+                    userDeviation: userDeviation,
+                    yZoomScale: chartZoomScale,
+                    mockExamResults: mockExamResults
+                )
+                    .frame(width: generalChartWidth, height: 660)
                     .padding(.trailing, 12)
                     .simultaneousGesture(
                         MagnificationGesture()
@@ -5013,11 +5013,34 @@ struct StrategyMapView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
+    @ViewBuilder
+    private var latestDeviationSummary: some View {
+        if let userDeviation {
+            Label {
+                Text("最新模試の偏差値 \(userDeviation.formatted(.number.precision(.fractionLength(1))))")
+            } icon: {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Color.uniexamIndigo)
+            .padding(.top, 2)
+        } else {
+            Label("模試結果を登録すると基準ラインが表示されます", systemImage: "info.circle")
+                .font(.caption)
+                .foregroundStyle(Color.secondaryText)
+                .padding(.top, 2)
+        }
+    }
+
     private var commonTestStrategyCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("共通テスト ボーダー得点率")
                 .font(.headline)
-            Text("縦軸は50〜100%、横軸は大学・入試方式です。")
+
+            latestCommonTestScoreSummary
+                .padding(.top, 2)
+
+            Text("この得点率は最新の模試の結果を反映しています。模試の結果はサイドバーから追加・変更ができます。")
                 .font(.caption)
                 .foregroundStyle(Color.secondaryText)
 
@@ -5030,7 +5053,10 @@ struct StrategyMapView: View {
                 .frame(maxWidth: .infinity, minHeight: 260)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    CommonTestStrategyChart(schools: commonTestSchools)
+                    CommonTestStrategyChart(
+                        schools: commonTestSchools,
+                        latestCommonTestScoreRate: latestCommonTestScoreRate
+                    )
                         .frame(width: commonTestChartWidth, height: 480)
                         .padding(.trailing, 12)
                 }
@@ -5040,6 +5066,23 @@ struct StrategyMapView: View {
         .padding(16)
         .background(.white)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var latestCommonTestScoreSummary: some View {
+        if let latestCommonTestScoreRate {
+            Label {
+                Text("最新模試の得点率 \(latestCommonTestScoreRate.formatted(.number.precision(.fractionLength(0...1))))%")
+            } icon: {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Color.uniexamIndigo)
+        } else {
+            Label("最新模試の得点率 未登録", systemImage: "info.circle")
+                .font(.caption)
+                .foregroundStyle(Color.secondaryText)
+        }
     }
 
     private var generalSchools: [ExamSchool] {
@@ -5064,18 +5107,18 @@ struct StrategyMapView: View {
     }
 
     private var commonTestChartWidth: CGFloat {
-        max(620, CGFloat(commonTestSchools.count) * 124 + 88)
+        max(500, CGFloat(commonTestSchools.count) * 112 + 40)
+    }
+
+    private var latestCommonTestScoreRate: Double? {
+        mockExamResults
+            .filter { $0.isCommonTestMock && $0.commonTestScoreRate != nil }
+            .max { $0.date < $1.date }?
+            .commonTestScoreRate
     }
 
     private var generalTimelineRange: ClosedRange<Date>? {
         StrategyTimeline.range(for: generalSchools)
-    }
-
-    private var generalTimelineDescription: String {
-        guard let range = generalTimelineRange else {
-            return "入試日を登録すると日程の範囲が表示されます。縦軸は偏差値です。"
-        }
-        return "横軸は\(range.lowerBound.formatted(.shortMonthDay))〜\(range.upperBound.formatted(.shortMonthDay))、縦軸は偏差値。ピンチで縦軸を拡大できます。"
     }
 
     private var generalChartWidth: CGFloat {
@@ -5099,6 +5142,15 @@ private enum StrategyTimeline {
 
         var lowerBound = roundedDown(earliest)
         var upperBound = roundedUp(latest)
+
+        // Round-number exam dates need a little breathing room so their labels
+        // do not begin flush against the chart edge.
+        if calendar.isDate(earliest, inSameDayAs: lowerBound) {
+            lowerBound = calendar.date(byAdding: .day, value: -3, to: lowerBound) ?? lowerBound
+        }
+        if calendar.isDate(latest, inSameDayAs: upperBound) {
+            upperBound = calendar.date(byAdding: .day, value: 3, to: upperBound) ?? upperBound
+        }
 
         if lowerBound == upperBound {
             lowerBound = previousNiceDate(before: lowerBound) ?? calendar.date(byAdding: .day, value: -5, to: lowerBound) ?? lowerBound
@@ -5194,6 +5246,7 @@ private struct StrategyBandLegendItem: View {
 
 private struct CommonTestStrategyChart: View {
     let schools: [ExamSchool]
+    let latestCommonTestScoreRate: Double?
 
     private let minimumRate = 50.0
     private let maximumRate = 100.0
@@ -5205,6 +5258,10 @@ private struct CommonTestStrategyChart: View {
 
             ZStack(alignment: .topLeading) {
                 grid(in: plot)
+
+                if let latestCommonTestScoreRate {
+                    latestScoreRateLine(latestCommonTestScoreRate, in: plot)
+                }
 
                 ForEach(Array(schools.enumerated()), id: \.element.id) { index, school in
                     if let rate = borderRate(for: school) {
@@ -5231,6 +5288,28 @@ private struct CommonTestStrategyChart: View {
                     }
                 }
             }
+        }
+    }
+
+    private func latestScoreRateLine(_ rate: Double, in plot: CGRect) -> some View {
+        let y = yPosition(for: rate, in: plot)
+
+        return ZStack(alignment: .topLeading) {
+            Path { path in
+                path.move(to: CGPoint(x: plot.minX, y: y))
+                path.addLine(to: CGPoint(x: plot.maxX, y: y))
+            }
+            .stroke(Color.uniexamIndigo.opacity(0.72), lineWidth: 2.5)
+
+            HStack(spacing: 3) {
+                Text("▶︎")
+                    .font(.caption2.weight(.bold))
+                Text(rate.formatted(.number.precision(.fractionLength(0...1))) + "%")
+                    .font(.caption2.weight(.bold))
+                    .monospacedDigit()
+            }
+            .foregroundStyle(Color.uniexamIndigo)
+            .position(x: plot.minX - 22, y: y)
         }
     }
 
@@ -5313,9 +5392,15 @@ struct StrategyChart: View {
     var schools: [ExamSchool]
     var userDeviation: Double?
     var yZoomScale: Double
+    var mockExamResults: [MockExamResult]
 
-    private let fullMinDeviation = 30.0
-    private let fullMaxDeviation = 75.0
+    private var fullDeviationRange: ClosedRange<Double> {
+        let deviations = schools.map(\.deviation)
+        guard let minimum = deviations.min(), let maximum = deviations.max() else {
+            return 30...75
+        }
+        return (minimum - 10)...(maximum + 10)
+    }
 
     private var timelineRange: ClosedRange<Date> {
         if let range = StrategyTimeline.range(for: schools) {
@@ -5330,17 +5415,18 @@ struct StrategyChart: View {
     }
 
     private var visibleDeviationRange: ClosedRange<Double> {
-        let fullSpan = fullMaxDeviation - fullMinDeviation
+        let fullRange = fullDeviationRange
+        let fullSpan = fullRange.upperBound - fullRange.lowerBound
         let visibleSpan = fullSpan / min(max(yZoomScale, 1.0), 3.5)
         let halfSpan = visibleSpan / 2
-        let requestedCenter = userDeviation ?? (fullMinDeviation + fullMaxDeviation) / 2
-        let center = min(max(requestedCenter, fullMinDeviation + halfSpan), fullMaxDeviation - halfSpan)
+        let requestedCenter = userDeviation ?? (fullRange.lowerBound + fullRange.upperBound) / 2
+        let center = min(max(requestedCenter, fullRange.lowerBound + halfSpan), fullRange.upperBound - halfSpan)
         return (center - halfSpan)...(center + halfSpan)
     }
 
     var body: some View {
         GeometryReader { proxy in
-            let plot = CGRect(x: 62, y: 20, width: proxy.size.width - 84, height: proxy.size.height - 290)
+            let plot = CGRect(x: 62, y: 20, width: proxy.size.width - 84, height: proxy.size.height - 310)
 
             ZStack(alignment: .topLeading) {
                 if let userDeviation {
@@ -5405,7 +5491,7 @@ struct StrategyChart: View {
                 }
             }
             .stroke(
-                Color.primaryText.opacity(0.46),
+                Color.schoolSlate.opacity(0.72),
                 style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
             )
         }
@@ -5419,29 +5505,74 @@ struct StrategyChart: View {
                     return Calendar.current.isDate(examDate, inSameDayAs: date)
                 }
                 let pointX = xPosition(for: date, in: plot)
+                let columnWidth = max(100, CGFloat(dateSchools.count) * 80)
 
                 Path { path in
                     path.move(to: CGPoint(x: pointX, y: plot.maxY))
-                    path.addLine(to: CGPoint(x: pointX, y: plot.maxY + 29))
+                    path.addLine(to: CGPoint(x: pointX, y: plot.maxY + 8))
                 }
                 .stroke(Color.secondaryText.opacity(0.28), lineWidth: 1)
 
-                VStack(spacing: 6) {
+                VStack(spacing: 7) {
                     Text(date.formatted(.shortMonthDay))
-                        .font(.caption2.weight(.bold))
+                        .font(.caption.weight(.bold))
                         .monospacedDigit()
                         .foregroundStyle(Color.primaryText)
+
+                    HStack(spacing: 10) {
+                        ForEach(dateSchools) { school in
+                            latestJudgmentBadge(for: school)
+                                .frame(width: 70)
+                        }
+                    }
+
+                    HStack(spacing: 10) {
+                        ForEach(dateSchools) { school in
+                            Rectangle()
+                                .fill(school.color.color.opacity(0.78))
+                                .frame(
+                                    width: shouldShowFullMethod(for: school) ? 52 : 28,
+                                    height: 2
+                                )
+                                .frame(width: 70)
+                        }
+                    }
 
                     HStack(alignment: .top, spacing: 10) {
                         ForEach(dateSchools) { school in
                             verticalSchoolLabel(school)
+                                .frame(width: 70, alignment: .top)
                         }
                     }
                 }
-                .frame(width: max(100, CGFloat(dateSchools.count) * 80), height: 250, alignment: .top)
-                .position(x: pointX, y: plot.maxY + 140)
+                .frame(width: columnWidth, height: 250, alignment: .top)
+                .position(x: pointX, y: plot.maxY + 161)
             }
         }
+    }
+
+    private func latestJudgmentBadge(for school: ExamSchool) -> some View {
+        let grade = latestJudgment(for: school)
+        let color = grade?.strategyColor ?? Color.schoolSlate
+        let title = grade?.shortStrategyLabel ?? "−"
+
+        return Text(title)
+            .font(.title3.weight(.heavy))
+            .monospacedDigit()
+            .foregroundStyle(color)
+            .frame(width: 64, height: 32)
+            .accessibilityLabel(grade?.rawValue ?? "判定なし")
+    }
+
+    private func latestJudgment(for school: ExamSchool) -> MockExamJudgmentGrade? {
+        mockExamResults.compactMap { result -> (date: Date, grade: MockExamJudgmentGrade)? in
+            guard let judgment = result.judgments.first(where: { $0.examOptionID == school.id }) else {
+                return nil
+            }
+            return (result.date, judgment.grade)
+        }
+        .max { $0.date < $1.date }?
+        .grade
     }
 
     private var examLabelDates: [Date] {
@@ -5451,10 +5582,6 @@ struct StrategyChart: View {
 
     private func verticalSchoolLabel(_ school: ExamSchool) -> some View {
         VStack(spacing: 5) {
-            Rectangle()
-                .fill(school.color.color)
-                .frame(width: 26, height: 3)
-
             HStack(alignment: .top, spacing: 5) {
                 Text(verticalText(school.name))
                     .font(.caption2.weight(.bold))
@@ -5506,7 +5633,7 @@ struct StrategyChart: View {
                 path.move(to: CGPoint(x: plot.minX, y: y))
                 path.addLine(to: CGPoint(x: plot.maxX, y: y))
             }
-            .stroke(Color.uniexamIndigo.opacity(0.45), lineWidth: 2)
+            .stroke(Color.uniexamIndigo.opacity(0.82), lineWidth: 2.5)
 
             HStack(spacing: 3) {
                 Text("▶︎")
@@ -5616,7 +5743,27 @@ struct StrategyChart: View {
     }
 
     private func axisLabel(for value: Double) -> String {
-        value.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(value)) : String(format: "%.1f", value)
+        String(format: "%.1f", value)
+    }
+}
+
+private extension MockExamJudgmentGrade {
+    var shortStrategyLabel: String {
+        String(rawValue.prefix(1))
+    }
+
+    var strategyColor: Color {
+        switch self {
+        case .a: .schoolBrightRed
+        case .b: .schoolAmber
+        case .c: .schoolLimeGreen
+        case .d: .schoolPurple
+        case .f: .schoolSlate
+        }
+    }
+
+    var usesDarkStrategyText: Bool {
+        self == .b || self == .c
     }
 }
 
