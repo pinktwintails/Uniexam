@@ -295,7 +295,7 @@ struct AppSidebarView: View {
         }
         .frame(maxHeight: .infinity)
         .background {
-            Color.white.ignoresSafeArea()
+            Color.surface.ignoresSafeArea()
         }
         .shadow(color: .black.opacity(0.16), radius: 18, x: 8)
     }
@@ -1259,7 +1259,7 @@ struct SchoolListView: View {
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 8)
-                .background(.white)
+                .background(Color.surface)
 
                 ScrollView {
                     LazyVStack(spacing: 12) {
@@ -1412,7 +1412,7 @@ struct SchoolRow: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .background(.white)
+        .background(Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(alignment: .leading) {
             Rectangle()
@@ -1518,7 +1518,7 @@ struct SchoolDetailView: View {
                                 }
                                 .foregroundStyle(school.color.color)
                                 .padding(16)
-                                .background(.white)
+                                .background(Color.surface)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
                             .buttonStyle(.plain)
@@ -1813,7 +1813,7 @@ struct ExamScoreView: View {
                     }
                     .foregroundStyle(tint)
                     .padding(16)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 8))
+                    .background(Color.surface, in: RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
             } else {
@@ -1907,7 +1907,7 @@ struct ExamScoreView: View {
                             .padding(15)
                         }
                     }
-                    .background(.white, in: RoundedRectangle(cornerRadius: 8))
+                    .background(Color.surface, in: RoundedRectangle(cornerRadius: 8))
                 }
             }
         }
@@ -1964,7 +1964,7 @@ struct ExamScoreCard: View {
                 }
             }
         }
-        .background(.white, in: RoundedRectangle(cornerRadius: 8))
+        .background(Color.surface, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -2019,7 +2019,7 @@ struct ExamChecklistView: View {
                     .scaleEffect(x: 1, y: 1.5, anchor: .center)
             }
             .padding(16)
-            .background(.white, in: RoundedRectangle(cornerRadius: 8))
+            .background(Color.surface, in: RoundedRectangle(cornerRadius: 8))
 
             if items.isEmpty {
                 ContentUnavailableView(
@@ -2028,13 +2028,13 @@ struct ExamChecklistView: View {
                     description: Text("下の入力欄から追加できます")
                 )
                 .frame(maxWidth: .infinity, minHeight: 150)
-                .background(.white, in: RoundedRectangle(cornerRadius: 8))
+                .background(Color.surface, in: RoundedRectangle(cornerRadius: 8))
             } else {
                 List {
                     ForEach($items) { $item in
                         checklistRow(item: $item)
                             .listRowInsets(EdgeInsets(top: 7, leading: 14, bottom: 7, trailing: 12))
-                            .listRowBackground(Color.white)
+                            .listRowBackground(Color.surface)
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
                                     itemPendingDeletion = item
@@ -2077,7 +2077,7 @@ struct ExamChecklistView: View {
             }
             .padding(.horizontal, 14)
             .frame(minHeight: 52)
-            .background(.white, in: RoundedRectangle(cornerRadius: 8))
+            .background(Color.surface, in: RoundedRectangle(cornerRadius: 8))
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(tint.opacity(isAddingTask ? 0.42 : 0.16), lineWidth: 1)
@@ -2139,7 +2139,7 @@ struct ExamChecklistView: View {
                             .font(.subheadline.weight(.semibold))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 8))
+                            .background(Color.surface, in: RoundedRectangle(cornerRadius: 8))
                     }
                     .accessibilityLabel("\(item.wrappedValue.title)を並び替え")
             }
@@ -2361,7 +2361,7 @@ struct SchoolDetailSummary: View {
             }
             .padding(16)
         }
-        .background(.white)
+        .background(Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
@@ -2376,7 +2376,7 @@ struct NextExamEventBanner: View {
                 .font(.headline)
                 .foregroundStyle(tint)
                 .frame(width: 38, height: 38)
-                .background(.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 7))
+                .background(Color.surface.opacity(0.8), in: RoundedRectangle(cornerRadius: 7))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("次の予定")
@@ -2437,7 +2437,7 @@ struct SchoolDetailSectionCard: View {
                 }
             }
         }
-        .background(.white)
+        .background(Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
@@ -2490,7 +2490,7 @@ struct EditSchoolView: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(.white)
+                .background(Color.surface)
                 .accessibilityLabel("入試方式の編集内容")
 
                 Form {
@@ -3723,7 +3723,7 @@ struct SchoolColorPicker: View {
                         .rotationEffect(.degrees(isExpanded ? 180 : 0))
                 }
                 .padding(12)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
+                .background(Color.surface, in: RoundedRectangle(cornerRadius: 8))
                 .overlay {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(selection.color.opacity(0.35), lineWidth: 1)
@@ -4016,7 +4016,7 @@ struct ExamCalendarView: View {
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
         }
-        .background(.white)
+        .background(Color.surface)
     }
 
     private var filteredEvents: [ExamEvent] {
@@ -4349,7 +4349,7 @@ struct AddCalendarEventSheet: View {
             .disabled(!canSave)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(.white)
+            .background(Color.surface)
             .overlay(alignment: .top) { Divider() }
         }
     }
@@ -4392,7 +4392,7 @@ struct CalendarEventEditorSection<Content: View>: View {
             content
         }
         .padding(15)
-        .background(.white, in: RoundedRectangle(cornerRadius: 8))
+        .background(Color.surface, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -4506,7 +4506,7 @@ struct CalendarDayAgendaSheet: View {
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 10)
-                .background(.white)
+                .background(Color.surface)
             }
             .navigationDestination(item: $addEventDraft) { draft in
                 AddCalendarEventSheet(draft: draft, universities: universities) { event in
@@ -4636,7 +4636,7 @@ struct MonthGridView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 12)
-        .background(.white)
+        .background(Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
@@ -4667,6 +4667,8 @@ struct MonthGridView: View {
 }
 
 struct CalendarDayCell: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var date: Date
     var isCurrentMonth: Bool
     var isSelected: Bool
@@ -4697,6 +4699,19 @@ struct CalendarDayCell: View {
         case (false, false):
             return nil
         }
+    }
+
+    private var dayNumberColor: Color {
+        if isSelected {
+            return Color.uniexamIndigo
+        }
+
+        if colorScheme == .dark, hasExam != hasResult {
+            let darkText = Color(red: 0.19, green: 0.22, blue: 0.28)
+            return isCurrentMonth ? darkText : darkText.opacity(0.45)
+        }
+
+        return isCurrentMonth ? Color.primaryText : Color.secondaryText.opacity(0.45)
     }
 
     @ViewBuilder
@@ -4752,7 +4767,7 @@ struct CalendarDayCell: View {
             HStack {
                 Text("\(Calendar.current.component(.day, from: date))")
                     .font(.caption.weight(isSelected ? .bold : .semibold))
-                    .foregroundStyle(isSelected ? Color.uniexamIndigo : (isCurrentMonth ? Color.primaryText : Color.secondaryText.opacity(0.45)))
+                    .foregroundStyle(dayNumberColor)
                     .frame(minWidth: 27, minHeight: 24)
                     .background {
                         if isSelected {
@@ -5038,6 +5053,7 @@ struct StrategyMapView: View {
                             }
                         }
                         .pickerStyle(.segmented)
+                        .tint(Color.uniexamIndigo)
                         .accessibilityLabel("戦略マップの入試方式")
 
                         if selectedCategory == .general {
@@ -5058,6 +5074,7 @@ struct StrategyMapView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("一般入試 レベル推移グラフ")
                 .font(.headline)
+                .foregroundStyle(Color.primaryText)
 
             Text("グラフを2本指で広げたり縮めたりすると、偏差値の表示範囲を調整できます。")
                 .font(.caption)
@@ -5101,7 +5118,7 @@ struct StrategyMapView: View {
             .padding(.top, 8)
         }
         .padding(16)
-        .background(.white)
+        .background(Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
@@ -5128,6 +5145,7 @@ struct StrategyMapView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("共通テスト ボーダー得点率")
                 .font(.headline)
+                .foregroundStyle(Color.primaryText)
 
             latestCommonTestScoreSummary
                 .padding(.top, 2)
@@ -5156,7 +5174,7 @@ struct StrategyMapView: View {
             }
         }
         .padding(16)
-        .background(.white)
+        .background(Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
@@ -6012,11 +6030,32 @@ extension Color {
     }
 
     static let deepNavy = Color(red: 0.12, green: 0.23, blue: 0.37)
-    static let uniexamIndigo = Color(red: 0.28, green: 0.34, blue: 0.78)
+    static let uniexamIndigo = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.56, green: 0.61, blue: 1.0, alpha: 1)
+            : UIColor(red: 0.28, green: 0.34, blue: 0.78, alpha: 1)
+    })
     static let clearBlue = Color(red: 0.44, green: 0.65, blue: 0.91)
-    static let appBackground = Color(red: 0.97, green: 0.97, blue: 0.98)
-    static let primaryText = Color(red: 0.19, green: 0.22, blue: 0.28)
-    static let secondaryText = Color(red: 0.48, green: 0.52, blue: 0.58)
+    static let appBackground = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? .systemGroupedBackground
+            : UIColor(red: 0.97, green: 0.97, blue: 0.98, alpha: 1)
+    })
+    static let surface = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? .secondarySystemGroupedBackground
+            : .white
+    })
+    static let primaryText = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? .label
+            : UIColor(red: 0.19, green: 0.22, blue: 0.28, alpha: 1)
+    })
+    static let secondaryText = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? .secondaryLabel
+            : UIColor(red: 0.48, green: 0.52, blue: 0.58, alpha: 1)
+    })
     static let schoolBlue = Color(hex: 0x6B8FF3)
     static let schoolDeepBlue = Color(hex: 0x4E7CE2)
     static let schoolRosePink = Color(hex: 0xF28AAE)

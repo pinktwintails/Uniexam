@@ -57,10 +57,11 @@ struct UniversityListView: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .tint(Color.uniexamIndigo)
                     .padding(.horizontal, 18)
                     .padding(.top, 10)
                     .padding(.bottom, 8)
-                    .background(.white)
+                    .background(Color.surface)
                 }
 
                 listToolbar
@@ -159,7 +160,7 @@ struct UniversityListView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 8)
-        .background(.white)
+        .background(Color.surface)
     }
 
     private var activeSortOption: SchoolSortOption {
@@ -360,7 +361,7 @@ struct HiddenItemsView: View {
                         if !hasHiddenItems {
                             ContentUnavailableView(
                                 "非表示の項目はありません",
-                                systemImage: "eye",
+                                systemImage: "archivebox",
                                 description: Text("大学や入試方式を非表示にすると、ここから復元できます。")
                             )
                             .frame(maxWidth: .infinity)
@@ -411,6 +412,8 @@ struct HiddenItemsView: View {
 }
 
 struct UniversityRow: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var university: UniversityChoice
 
     var body: some View {
@@ -487,7 +490,14 @@ struct UniversityRow: View {
                 }
             }
         }
-        .background(university.color.color.opacity(0.065))
+        .background {
+            ZStack {
+                if colorScheme == .dark {
+                    Color.surface
+                }
+                university.color.color.opacity(0.065)
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(alignment: .leading) {
             Rectangle().fill(university.color.color.opacity(0.8)).frame(width: 3)
@@ -578,7 +588,7 @@ struct UniversityOptionCompactRow: View {
                     .foregroundStyle(tint)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
-                    .background(.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 6))
+                    .background(Color.surface.opacity(0.82), in: RoundedRectangle(cornerRadius: 6))
                     .overlay {
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(tint.opacity(0.24), lineWidth: 1)
@@ -683,7 +693,7 @@ struct ExamOptionListRow: View {
             .padding(.vertical, 10)
             .background(school.color.color.opacity(0.07))
         }
-        .background(.white)
+        .background(Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(alignment: .leading) {
             Rectangle()
@@ -1004,7 +1014,7 @@ struct UniversityScheduleCalendar: View {
                 }
                 .padding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.white, in: RoundedRectangle(cornerRadius: 8))
+                .background(Color.surface, in: RoundedRectangle(cornerRadius: 8))
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -1019,7 +1029,7 @@ struct UniversityScheduleCalendar: View {
                             }
                             .padding(.horizontal, 9)
                             .frame(height: 30)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 6))
+                            .background(Color.surface, in: RoundedRectangle(cornerRadius: 6))
                             .overlay {
                                 RoundedRectangle(cornerRadius: 6)
                                     .stroke(school.color.color.opacity(0.26), lineWidth: 1)
@@ -1179,7 +1189,7 @@ struct UniversitySummaryCard: View {
             }
         }
         .padding(16)
-        .background(.white, in: RoundedRectangle(cornerRadius: 8))
+        .background(Color.surface, in: RoundedRectangle(cornerRadius: 8))
         .overlay(alignment: .top) {
             Rectangle().fill(university.color.color).frame(height: 4)
         }
@@ -1256,7 +1266,7 @@ struct ExamOptionRow: View {
                 .foregroundStyle(Color.secondaryText)
         }
         .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 8))
+        .background(Color.surface, in: RoundedRectangle(cornerRadius: 8))
         .accessibilityElement(children: .combine)
     }
 }
