@@ -5,7 +5,6 @@
 //  Created by 岩崎未来 on 2026/07/23.
 //
 
-import Combine
 import SwiftUI
 import UIKit
 
@@ -20,24 +19,41 @@ extension EnvironmentValues {
     }
 }
 
+private enum MainAppTab: String, CaseIterable, Identifiable {
+    case universities
+    case examOptions
+    case calendar
+    case strategy
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .universities: "志望校"
+        case .examOptions: "入試方式"
+        case .calendar: "カレンダー"
+        case .strategy: "戦略"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .universities: "building.columns"
+        case .examOptions: "doc.text"
+        case .calendar: "calendar"
+        case .strategy: "chart.xyaxis.line"
+        }
+    }
+}
+
 struct ContentView: View {
-    @Environment(\.scenePhase) private var scenePhase
-
-    private let cloudRefreshTimer = Timer.publish(
-        every: 60,
-        on: .main,
-        in: .common
-    ).autoconnect()
-
     @State private var universities: [UniversityChoice]
     @State private var mockExamResults: [MockExamResult]
     @State private var customCalendarEvents: [UserCalendarEvent]
     @State private var showingSidebar = false
     @State private var showingHiddenItems = false
     @State private var showingMockExamResults = false
-    @State private var cloudSyncReady = false
-    @State private var lastAppliedCloudPayload: Data?
-    @State private var cloudSyncDebounceTask: Task<Void, Never>?
+    @State private var selectedTab: MainAppTab = .universities
 
     init() {
         let loadedUniversities = UniversityPersistence.load()
@@ -54,41 +70,8 @@ struct ContentView: View {
 
     var body: some View {
         ZStack(alignment: .leading) {
-            TabView {
-                UniversityListView(
-                    universities: $universities,
-                    customEvents: $customCalendarEvents,
-                    listMode: .university
-                )
-                    .tabItem {
-                        Label("志望校", systemImage: "building.columns")
-                    }
-
-                UniversityListView(
-                    universities: $universities,
-                    customEvents: $customCalendarEvents,
-                    listMode: .examOption
-                )
-                    .tabItem {
-                        Label("入試方式", systemImage: "doc.text")
-                    }
-
-                ExamCalendarView(universities: $universities, customEvents: $customCalendarEvents)
-                    .tabItem {
-                        Label("カレンダー", systemImage: "calendar")
-                    }
-
-                StrategyMapView(
-                    schools: schools,
-                    userDeviation: latestMockExamDeviation,
-                    mockExamResults: mockExamResults
-                )
-                    .tabItem {
-                        Label("戦略", systemImage: "chart.xyaxis.line")
-                    }
-            }
-            .tint(.uniexamIndigo)
-            .allowsHitTesting(!showingSidebar)
+            mainNavigation
+                .allowsHitTesting(!showingSidebar)
 
             if showingSidebar {
                 Color.black.opacity(0.28)
@@ -126,35 +109,12 @@ struct ContentView: View {
         }
         .onChange(of: universities) { _, newValue in
             UniversityPersistence.save(newValue)
-            syncCurrentDataIfReady()
         }
         .onChange(of: mockExamResults) { _, newValue in
             MockExamResultPersistence.save(newValue)
-            syncCurrentDataIfReady()
         }
         .onChange(of: customCalendarEvents) { _, newValue in
             UserCalendarEventPersistence.save(newValue)
-            syncCurrentDataIfReady()
-        }
-        .onAppear {
-            bootstrapCloudSyncIfNeeded()
-        }
-        .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .active {
-                refreshCloudData()
-            }
-        }
-        .onReceive(cloudRefreshTimer) { _ in
-            if scenePhase == .active {
-                refreshCloudData()
-            }
-        }
-        .onReceive(
-            NotificationCenter.default.publisher(
-                for: .uniexamCustomColorsDidChange
-            )
-        ) { _ in
-            syncCurrentDataIfReady()
         }
     }
 
@@ -170,56 +130,133 @@ struct ContentView: View {
         }?.deviation
     }
 
-    private func bootstrapCloudSyncIfNeeded() {
-        guard !cloudSyncReady else { return }
-        cloudSyncReady = true
-        refreshCloudData()
-    }
-
-    private func applyCloudSnapshot(_ snapshot: UniexamCloudSnapshot) {
-        lastAppliedCloudPayload = try? JSONEncoder().encode(snapshot)
-        universities = snapshot.universities
-        mockExamResults = snapshot.mockExamResults
-        customCalendarEvents = snapshot.calendarEvents
-        CustomSchoolColorPersistence.save(snapshot.customColors)
-    }
-
-    private func syncCurrentDataIfReady() {
-        guard cloudSyncReady else { return }
-
-        let snapshot = currentCloudSnapshot()
-        if let payload = try? JSONEncoder().encode(snapshot),
-           payload == lastAppliedCloudPayload {
-            return
+    @ViewBuilder
+    private var mainNavigation: some View {
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            iPadTabContent
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    IPadBottomTabBar(selection: $selectedTab)
+                }
+        } else {
+            mainTabView
         }
+    }
 
-        cloudSyncDebounceTask?.cancel()
-        cloudSyncDebounceTask = Task {
-            try? await Task.sleep(for: .milliseconds(350))
-            guard !Task.isCancelled else { return }
-            if let mergedSnapshot = await UniexamCloudSync.shared.synchronize(snapshot) {
-                applyCloudSnapshot(mergedSnapshot)
+    private var mainTabView: some View {
+        TabView(selection: $selectedTab) {
+            UniversityListView(
+                universities: $universities,
+                customEvents: $customCalendarEvents,
+                listMode: .university
+            )
+                .tabItem {
+                    Label(MainAppTab.universities.title, systemImage: MainAppTab.universities.systemImage)
+                }
+                .tag(MainAppTab.universities)
+
+            UniversityListView(
+                universities: $universities,
+                customEvents: $customCalendarEvents,
+                listMode: .examOption
+            )
+                .tabItem {
+                    Label(MainAppTab.examOptions.title, systemImage: MainAppTab.examOptions.systemImage)
+                }
+                .tag(MainAppTab.examOptions)
+
+            ExamCalendarView(universities: $universities, customEvents: $customCalendarEvents)
+                .tabItem {
+                    Label(MainAppTab.calendar.title, systemImage: MainAppTab.calendar.systemImage)
+                }
+                .tag(MainAppTab.calendar)
+
+            StrategyMapView(
+                schools: schools,
+                userDeviation: latestMockExamDeviation,
+                mockExamResults: mockExamResults
+            )
+                .tabItem {
+                    Label(MainAppTab.strategy.title, systemImage: MainAppTab.strategy.systemImage)
+                }
+                .tag(MainAppTab.strategy)
+        }
+        .tabViewStyle(.tabBarOnly)
+        .tint(.uniexamIndigo)
+    }
+
+    private var iPadTabContent: some View {
+        ZStack {
+            UniversityListView(
+                universities: $universities,
+                customEvents: $customCalendarEvents,
+                listMode: .university
+            )
+                .opacity(selectedTab == .universities ? 1 : 0)
+                .allowsHitTesting(selectedTab == .universities)
+                .accessibilityHidden(selectedTab != .universities)
+
+            UniversityListView(
+                universities: $universities,
+                customEvents: $customCalendarEvents,
+                listMode: .examOption
+            )
+                .opacity(selectedTab == .examOptions ? 1 : 0)
+                .allowsHitTesting(selectedTab == .examOptions)
+                .accessibilityHidden(selectedTab != .examOptions)
+
+            ExamCalendarView(universities: $universities, customEvents: $customCalendarEvents)
+                .opacity(selectedTab == .calendar ? 1 : 0)
+                .allowsHitTesting(selectedTab == .calendar)
+                .accessibilityHidden(selectedTab != .calendar)
+
+            StrategyMapView(
+                schools: schools,
+                userDeviation: latestMockExamDeviation,
+                mockExamResults: mockExamResults
+            )
+                .opacity(selectedTab == .strategy ? 1 : 0)
+                .allowsHitTesting(selectedTab == .strategy)
+                .accessibilityHidden(selectedTab != .strategy)
+        }
+    }
+}
+
+private struct IPadBottomTabBar: View {
+    @Binding var selection: MainAppTab
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(MainAppTab.allCases) { tab in
+                Button {
+                    selection = tab
+                } label: {
+                    VStack(spacing: 5) {
+                        Image(systemName: tab.systemImage)
+                            .font(.system(size: 23, weight: .semibold))
+                        Text(tab.title)
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(selection == tab ? Color.uniexamIndigo : Color.secondaryText)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 58)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tab.title)
+                .accessibilityAddTraits(selection == tab ? .isSelected : [])
             }
         }
-    }
-
-    private func refreshCloudData() {
-        guard cloudSyncReady else { return }
-        let snapshot = currentCloudSnapshot()
-        Task {
-            if let mergedSnapshot = await UniexamCloudSync.shared.synchronize(snapshot) {
-                applyCloudSnapshot(mergedSnapshot)
-            }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .frame(maxWidth: 680)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 32))
+        .overlay {
+            RoundedRectangle(cornerRadius: 32)
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
         }
-    }
-
-    private func currentCloudSnapshot() -> UniexamCloudSnapshot {
-        UniexamCloudSnapshot.local(
-            universities: universities,
-            mockExamResults: mockExamResults,
-            calendarEvents: customCalendarEvents,
-            customColors: CustomSchoolColorPersistence.load()
-        )
+        .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 8)
     }
 }
 
@@ -2584,7 +2621,7 @@ struct EditSchoolView: View {
                                 .multilineTextAlignment(.trailing)
                                 .keyboardType(.decimalPad)
                                 .focused($focusedField, equals: .deviation)
-                                .foregroundStyle(Color.deepNavy)
+                                .foregroundStyle(Color.actionText)
                                 .frame(width: 64)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
@@ -3163,7 +3200,7 @@ struct SubjectEditor: View {
                     .font(.subheadline.weight(.semibold))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.deepNavy)
+            .foregroundStyle(Color.actionText)
         } else {
             EditorFieldLabel(title: title, systemImage: systemImage)
 
@@ -3281,7 +3318,7 @@ struct CommonTestSubjectEditor: View {
                     Label("共通テストを追加", systemImage: "plus.circle.fill")
                         .font(.subheadline.weight(.semibold))
                 }
-                .foregroundStyle(Color.deepNavy)
+                .foregroundStyle(Color.actionText)
             } else {
                 EditorFieldLabel(title: "共通テストの科目ごとの配点", systemImage: "checklist")
 
@@ -3304,7 +3341,7 @@ struct CommonTestSubjectEditor: View {
                     }
                     .contentShape(Rectangle())
                 }
-                .foregroundStyle(Color.deepNavy)
+                .foregroundStyle(Color.actionText)
                 .padding(.vertical, 6)
 
                 if subjects.isEmpty {
@@ -3316,7 +3353,7 @@ struct CommonTestSubjectEditor: View {
                         HStack(spacing: 10) {
                             Text(subject.subject)
                                 .font(.body.weight(.medium))
-                                .foregroundStyle(Color.deepNavy)
+                                .foregroundStyle(Color.actionText)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             TextField("配点", text: $subject.score)
                                 .keyboardType(.numberPad)
@@ -3409,7 +3446,7 @@ struct CommonTestSubjectPickerView: View {
                 .foregroundStyle(Color.uniexamIndigo)
             Text(title)
                 .font(.headline)
-                .foregroundStyle(Color.deepNavy)
+                .foregroundStyle(Color.actionText)
             Spacer()
         }
         .listRowBackground(Color.clear)
@@ -3443,7 +3480,7 @@ struct CommonTestSubjectPickerView: View {
                     .foregroundStyle(selectedCount > 0 ? Color.uniexamIndigo : Color.secondaryText.opacity(0.55))
                 Text("国語")
                     .fontWeight(.semibold)
-                    .foregroundStyle(Color.deepNavy)
+                    .foregroundStyle(Color.actionText)
                 Spacer()
                 if selectedCount > 0 && !isFullySelected {
                     Text("\(selectedCount)/3")
@@ -3473,7 +3510,7 @@ struct CommonTestSubjectPickerView: View {
                     .font(.title3)
                     .foregroundStyle(isSelected ? Color.uniexamIndigo : Color.secondaryText.opacity(0.55))
                 Text(subject)
-                    .foregroundStyle(Color.deepNavy)
+                    .foregroundStyle(Color.actionText)
                 Spacer()
             }
             .padding(.leading, isChild ? 14 : 0)
@@ -4644,7 +4681,13 @@ struct MonthGridView: View {
         let firstWeekday = calendar.component(.weekday, from: monthStart)
         let mondayBasedOffset = (firstWeekday + 5) % 7
         let gridStart = calendar.date(byAdding: .day, value: -mondayBasedOffset, to: monthStart) ?? monthStart
-        return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: gridStart) }
+        let daysInMonth = calendar.range(of: .day, in: .month, for: monthStart)?.count ?? 30
+        let requiredDayCount = mondayBasedOffset + daysInMonth
+        let weekCount = max(1, Int(ceil(Double(requiredDayCount) / 7.0)))
+
+        return (0..<(weekCount * 7)).compactMap {
+            calendar.date(byAdding: .day, value: $0, to: gridStart)
+        }
     }
 
     private func eventsForDay(_ date: Date) -> [ExamEvent] {
@@ -5037,8 +5080,6 @@ struct StrategyMapView: View {
     var userDeviation: Double?
     var mockExamResults: [MockExamResult]
     @State private var selectedCategory: ExamOptionCategory = .general
-    @State private var chartZoomScale = 1.0
-    @State private var committedChartZoomScale = 1.0
 
     var body: some View {
         NavigationStack {
@@ -5095,26 +5136,12 @@ struct StrategyMapView: View {
                 .padding(.top, 4)
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                StrategyChart(
-                    schools: generalSchools,
-                    userDeviation: userDeviation,
-                    yZoomScale: chartZoomScale,
-                    mockExamResults: mockExamResults
-                )
-                    .frame(width: generalChartWidth, height: 660)
-                    .padding(.trailing, 12)
-                    .simultaneousGesture(
-                        MagnificationGesture()
-                            .onChanged { value in
-                                chartZoomScale = min(max(committedChartZoomScale * value, 1.0), 3.5)
-                            }
-                            .onEnded { value in
-                                chartZoomScale = min(max(committedChartZoomScale * value, 1.0), 3.5)
-                                committedChartZoomScale = chartZoomScale
-                            }
-                    )
-            }
+            ZoomableStrategyChart(
+                schools: generalSchools,
+                userDeviation: userDeviation,
+                mockExamResults: mockExamResults,
+                chartWidth: generalChartWidth
+            )
             .padding(.top, 8)
         }
         .padding(16)
@@ -5237,6 +5264,229 @@ struct StrategyMapView: View {
         return max(860, CGFloat(days + 1) * 28 + 70)
     }
 
+}
+
+private enum StrategyChartLayout {
+    static let chartHeight: CGFloat = 660
+    static let plotTop: CGFloat = 20
+    static let bottomReserved: CGFloat = 310
+    static let fullDeviationRange = 30.0...75.0
+
+    static var plotHeight: CGFloat {
+        chartHeight - bottomReserved
+    }
+}
+
+private struct StrategyChartViewport {
+    var scale: CGFloat
+    var center: Double
+}
+
+private struct ZoomableStrategyChart: View {
+    let schools: [ExamSchool]
+    let userDeviation: Double?
+    let mockExamResults: [MockExamResult]
+    let chartWidth: CGFloat
+
+    @State private var committedScale: CGFloat = 1
+    @State private var committedCenter = 52.5
+    @State private var draggedCenter: Double?
+    @GestureState private var zoomViewport: StrategyChartViewport?
+
+    private var effectiveViewport: StrategyChartViewport {
+        if let zoomViewport {
+            return zoomViewport
+        }
+
+        return StrategyChartViewport(
+            scale: committedScale,
+            center: draggedCenter ?? committedCenter
+        )
+    }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            StrategyChart(
+                schools: schools,
+                userDeviation: userDeviation,
+                yZoomScale: Double(effectiveViewport.scale),
+                yCenter: effectiveViewport.center,
+                mockExamResults: mockExamResults
+            )
+            .frame(width: chartWidth, height: StrategyChartLayout.chartHeight)
+            .padding(.trailing, 12)
+            .contentShape(Rectangle())
+            .overlay(alignment: .topLeading) {
+                VerticalStrategyChartPanCapture(
+                    isEnabled: committedScale > 1.001,
+                    onChanged: updateVerticalPan,
+                    onEnded: finishVerticalPan
+                )
+                .frame(
+                    width: chartWidth,
+                    height: StrategyChartLayout.plotTop + StrategyChartLayout.plotHeight
+                )
+            }
+            .simultaneousGesture(zoomGesture, including: .all)
+        }
+        .transaction { transaction in
+            transaction.animation = nil
+        }
+    }
+
+    private var zoomGesture: some Gesture {
+        MagnifyGesture(minimumScaleDelta: 0.005)
+            .updating($zoomViewport) { value, state, _ in
+                state = viewport(
+                    magnification: value.magnification,
+                    anchor: value.startAnchor
+                )
+            }
+            .onEnded { value in
+                let viewport = viewport(
+                    magnification: value.magnification,
+                    anchor: value.startAnchor
+                )
+                committedScale = viewport.scale
+                committedCenter = viewport.center
+            }
+    }
+
+    private func updateVerticalPan(_ translation: CGFloat) {
+        let span = deviationSpan(for: committedScale)
+        let proposedCenter = committedCenter
+            + Double(translation / StrategyChartLayout.plotHeight) * span
+        draggedCenter = clampedCenter(proposedCenter, scale: committedScale)
+    }
+
+    private func finishVerticalPan(_ translation: CGFloat, cancelled: Bool) {
+        if !cancelled {
+            updateVerticalPan(translation)
+            if let draggedCenter {
+                committedCenter = draggedCenter
+            }
+        }
+        draggedCenter = nil
+    }
+
+    private func viewport(magnification: CGFloat, anchor: UnitPoint) -> StrategyChartViewport {
+        let newScale = clampedScale(committedScale * quantizedScale(magnification))
+        let anchorY = anchor.y * StrategyChartLayout.chartHeight
+        let anchorProgress = min(
+            max(
+                (anchorY - StrategyChartLayout.plotTop) / StrategyChartLayout.plotHeight,
+                0
+            ),
+            1
+        )
+        let currentSpan = deviationSpan(for: committedScale)
+        let anchorDeviation = committedCenter
+            + (0.5 - Double(anchorProgress)) * currentSpan
+        let newSpan = deviationSpan(for: newScale)
+        let proposedCenter = anchorDeviation
+            - (0.5 - Double(anchorProgress)) * newSpan
+
+        return StrategyChartViewport(
+            scale: newScale,
+            center: clampedCenter(proposedCenter, scale: newScale)
+        )
+    }
+
+    private func clampedScale(_ scale: CGFloat) -> CGFloat {
+        min(max(scale, 1), 3.5)
+    }
+
+    private func quantizedScale(_ scale: CGFloat) -> CGFloat {
+        (scale * 100).rounded() / 100
+    }
+
+    private func deviationSpan(for scale: CGFloat) -> Double {
+        let range = StrategyChartLayout.fullDeviationRange
+        return (range.upperBound - range.lowerBound) / Double(scale)
+    }
+
+    private func clampedCenter(_ center: Double, scale: CGFloat) -> Double {
+        let range = StrategyChartLayout.fullDeviationRange
+        let halfSpan = deviationSpan(for: scale) / 2
+        return min(
+            max(center, range.lowerBound + halfSpan),
+            range.upperBound - halfSpan
+        )
+    }
+}
+
+private struct VerticalStrategyChartPanCapture: UIViewRepresentable {
+    var isEnabled: Bool
+    var onChanged: (CGFloat) -> Void
+    var onEnded: (CGFloat, Bool) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.backgroundColor = .clear
+        view.isMultipleTouchEnabled = true
+
+        let recognizer = UIPanGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handlePan(_:))
+        )
+        recognizer.minimumNumberOfTouches = 1
+        recognizer.maximumNumberOfTouches = 1
+        recognizer.cancelsTouchesInView = false
+        recognizer.delegate = context.coordinator
+        view.addGestureRecognizer(recognizer)
+        context.coordinator.recognizer = recognizer
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.parent = self
+        context.coordinator.recognizer?.isEnabled = isEnabled
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var parent: VerticalStrategyChartPanCapture
+        weak var recognizer: UIPanGestureRecognizer?
+
+        init(parent: VerticalStrategyChartPanCapture) {
+            self.parent = parent
+        }
+
+        @objc func handlePan(_ recognizer: UIPanGestureRecognizer) {
+            let translation = recognizer.translation(in: recognizer.view).y
+
+            switch recognizer.state {
+            case .changed:
+                parent.onChanged(translation)
+            case .ended:
+                parent.onEnded(translation, false)
+            case .cancelled, .failed:
+                parent.onEnded(translation, true)
+            default:
+                break
+            }
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard parent.isEnabled,
+                  let pan = gestureRecognizer as? UIPanGestureRecognizer else {
+                return false
+            }
+
+            let velocity = pan.velocity(in: pan.view)
+            return abs(velocity.y) > abs(velocity.x) * 1.15
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
+    }
 }
 
 private enum StrategyTimeline {
@@ -5502,14 +5752,11 @@ struct StrategyChart: View {
     var schools: [ExamSchool]
     var userDeviation: Double?
     var yZoomScale: Double
+    var yCenter: Double
     var mockExamResults: [MockExamResult]
 
     private var fullDeviationRange: ClosedRange<Double> {
-        let deviations = schools.map(\.deviation)
-        guard let minimum = deviations.min(), let maximum = deviations.max() else {
-            return 30...75
-        }
-        return (minimum - 10)...(maximum + 10)
+        StrategyChartLayout.fullDeviationRange
     }
 
     private var timelineRange: ClosedRange<Date> {
@@ -5529,14 +5776,19 @@ struct StrategyChart: View {
         let fullSpan = fullRange.upperBound - fullRange.lowerBound
         let visibleSpan = fullSpan / min(max(yZoomScale, 1.0), 3.5)
         let halfSpan = visibleSpan / 2
-        let requestedCenter = userDeviation ?? (fullRange.lowerBound + fullRange.upperBound) / 2
+        let requestedCenter = yCenter
         let center = min(max(requestedCenter, fullRange.lowerBound + halfSpan), fullRange.upperBound - halfSpan)
         return (center - halfSpan)...(center + halfSpan)
     }
 
     var body: some View {
         GeometryReader { proxy in
-            let plot = CGRect(x: 62, y: 20, width: proxy.size.width - 84, height: proxy.size.height - 310)
+            let plot = CGRect(
+                x: 62,
+                y: StrategyChartLayout.plotTop,
+                width: proxy.size.width - 84,
+                height: proxy.size.height - StrategyChartLayout.bottomReserved
+            )
 
             ZStack(alignment: .topLeading) {
                 if let userDeviation {
@@ -6030,6 +6282,11 @@ extension Color {
     }
 
     static let deepNavy = Color(red: 0.12, green: 0.23, blue: 0.37)
+    static let actionText = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.62, green: 0.67, blue: 1.0, alpha: 1)
+            : UIColor(red: 0.12, green: 0.23, blue: 0.37, alpha: 1)
+    })
     static let uniexamIndigo = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark
             ? UIColor(red: 0.56, green: 0.61, blue: 1.0, alpha: 1)

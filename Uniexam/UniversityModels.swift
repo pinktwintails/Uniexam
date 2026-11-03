@@ -1385,6 +1385,7 @@ enum MockExamResultPersistence {
 enum UniversityPersistence {
     private static let currentKey = "uniexam.universities.v2"
     private static let legacyKey = "uniexam.schools.v1"
+    private static let recoveryFileName = "uniexam-universities-recovery.json"
     private static let sampleSnapshotKey = "uniexam.sampleUniversities.snapshot"
     private static let sampleVersionKey = "uniexam.sampleUniversities.version"
 
@@ -1394,6 +1395,11 @@ enum UniversityPersistence {
     private static let loadsBundledSamples = false
 
     static func load() -> [UniversityChoice] {
+        if let recoveredUniversities = loadPendingRecovery() {
+            save(recoveredUniversities)
+            return recoveredUniversities
+        }
+
         if let data = UserDefaults.standard.data(forKey: currentKey) {
             guard let universities = try? JSONDecoder().decode([UniversityChoice].self, from: data) else {
                 return []
@@ -1418,6 +1424,25 @@ enum UniversityPersistence {
     static func save(_ universities: [UniversityChoice]) {
         guard let data = try? JSONEncoder().encode(universities) else { return }
         UserDefaults.standard.set(data, forKey: currentKey)
+    }
+
+    private static func loadPendingRecovery() -> [UniversityChoice]? {
+        guard let documentsURL = FileManager.default.urls(
+            for: .documentDirectory,
+            in: .userDomainMask
+        ).first else {
+            return nil
+        }
+
+        let recoveryURL = documentsURL.appendingPathComponent(recoveryFileName)
+        guard let data = try? Data(contentsOf: recoveryURL),
+              let universities = try? JSONDecoder().decode([UniversityChoice].self, from: data),
+              !universities.isEmpty else {
+            return nil
+        }
+
+        try? FileManager.default.removeItem(at: recoveryURL)
+        return universities
     }
 
     static func migrate(_ schools: [ExamSchool]) -> [UniversityChoice] {

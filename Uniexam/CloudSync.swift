@@ -1,6 +1,7 @@
 import CloudKit
 import CryptoKit
 import Foundation
+import OSLog
 
 struct UniexamCloudSnapshot: Codable {
     var universities: [UniversityChoice]
@@ -74,12 +75,23 @@ private struct CloudSyncMetadata: Codable {
 final class UniexamCloudSync {
     static let shared = UniexamCloudSync()
 
+    private let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "Uniexam",
+        category: "CloudSync"
+    )
     private let recordType = "UniexamItem"
-    private let metadataKey = "uniexam.cloudSync.metadata.v2"
+    private let recordNamespace = "v4:"
+    private let manifestRecordName = "v4:metadata:manifest"
+    private let metadataKey = "uniexam.cloudSync.metadata.v5"
     private let backupKey = "uniexam.cloudSync.preCloudBackup.v2"
     private let legacySnapshotKey = "uniexam.cloudSync.snapshot.v1"
+    private let diagnosticKey = "uniexam.cloudSync.lastDiagnostic"
     private let database = CKContainer.default().privateCloudDatabase
-    private let encoder = JSONEncoder()
+    private let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return encoder
+    }()
     private let decoder = JSONDecoder()
 
     private(set) var status: UniexamCloudSyncStatus = .idle
@@ -111,19 +123,18 @@ final class UniexamCloudSync {
         do {
             let accountStatus = try await CKContainer.default().accountStatus()
             guard accountStatus == .available else {
+                logger.notice("iCloud account is unavailable: \(String(describing: accountStatus), privacy: .public)")
+                saveDiagnostic("iCloud account unavailable: \(accountStatus)")
                 status = .unavailable
                 return nil
             }
+            let cloudUserID = (try? await CKContainer.default().userRecordID().recordName)
+                ?? "unknown"
 
             var metadata = loadMetadata()
-            let syncSnapshot = metadata.didCompleteInitialSync
-                ? localSnapshot
-                : mergeLegacySnapshot(into: localSnapshot)
+            let syncSnapshot = mergeLegacySnapshot(into: localSnapshot)
             let localItems = try makeItems(from: syncSnapshot)
             let localMap = Dictionary(uniqueKeysWithValues: localItems.map { ($0.key, $0) })
-            if !metadata.didCompleteInitialSync {
-                try await ensureCloudSchema()
-            }
             let remoteMap = try await fetchRemoteItems()
 
             if !metadata.didCompleteInitialSync {
@@ -135,6 +146,10 @@ final class UniexamCloudSync {
                 )
                 saveMetadata(metadata)
                 status = .synced(Date())
+                publishFallbackSnapshot(result)
+                saveDiagnostic(
+                    "Synced successfully | user=\(cloudUserID) | universities=\(result.universities.count)"
+                )
                 return result
             }
 
@@ -142,15 +157,21 @@ final class UniexamCloudSync {
             saveMetadata(metadata)
 
             let result = try await reconcile(
-                localSnapshot: localSnapshot,
+                localSnapshot: syncSnapshot,
                 localMap: localMap,
                 remoteMap: remoteMap,
                 metadata: &metadata
             )
             saveMetadata(metadata)
             status = .synced(Date())
+            publishFallbackSnapshot(result)
+            saveDiagnostic(
+                "Synced successfully | user=\(cloudUserID) | universities=\(result.universities.count)"
+            )
             return result
         } catch {
+            logger.error("Cloud sync failed: \(error.localizedDescription, privacy: .public)")
+            saveDiagnostic("\(String(reflecting: error)) | \(error.localizedDescription)")
             status = isCloudUnavailable(error) ? .unavailable : .failed
             return nil
         }
@@ -166,6 +187,7 @@ final class UniexamCloudSync {
             for item in localMap.values {
                 try await save(item: item, updatedAt: Date())
             }
+            try await saveManifest(keys: Set(localMap.keys))
             metadata.didCompleteInitialSync = true
             metadata.knownKeys = Set(localMap.keys)
             metadata.lastHashes = localMap.mapValues(\.hash)
@@ -182,11 +204,13 @@ final class UniexamCloudSync {
 
         // Cloudに存在しない端末内データだけを追加する。競合時は初回同期前の
         // バックアップを残した上で、先に同期済みのCloud側を採用する。
-        for item in localMap.values where remoteMap[item.key] == nil {
+        for item in localMap.values
+            where remoteMap[item.key] == nil || remoteMap[item.key]?.isDeleted == true {
             try await save(item: item, updatedAt: Date())
             finalItems[item.key] = item
         }
 
+        try await saveManifest(keys: Set(remoteMap.keys).union(localMap.keys))
         metadata.didCompleteInitialSync = true
         metadata.knownKeys = Set(finalItems.keys)
         metadata.lastHashes = finalItems.mapValues(\.hash)
@@ -223,12 +247,23 @@ final class UniexamCloudSync {
                     metadata.localModifiedAt.removeValue(forKey: key)
                 }
             } else if let remote {
-                apply(remote: remote, to: &finalItems)
+                if remote.isDeleted, let local {
+                    try await save(item: local, updatedAt: Date())
+                    finalItems[key] = local
+                } else {
+                    apply(remote: remote, to: &finalItems)
+                }
+            } else if let local {
+                // Cloud側のレコードが欠けている場合は、端末内の既存データを
+                // 再送する。端末の保存内容は変更・削除しない。
+                try await save(item: local, updatedAt: Date())
+                finalItems[key] = local
             }
         }
 
         metadata.knownKeys = Set(finalItems.keys)
         metadata.lastHashes = finalItems.mapValues(\.hash)
+        try await saveManifest(keys: allKeys)
         return try makeSnapshot(from: finalItems.values)
     }
 
@@ -263,25 +298,25 @@ final class UniexamCloudSync {
     }
 
     private func fetchRemoteItems() async throws -> [String: RemoteCloudItem] {
-        var records: [CKRecord] = []
-        let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
-        let initialResult: (
-            matchResults: [(CKRecord.ID, Result<CKRecord, any Error>)],
-            queryCursor: CKQueryOperation.Cursor?
-        )
-
+        let manifest: CKRecord
         do {
-            initialResult = try await database.records(matching: query)
+            manifest = try await database.record(
+                for: CKRecord.ID(recordName: manifestRecordName)
+            )
         } catch let error as CKError where error.code == .unknownItem {
             return [:]
         }
 
-        var result = initialResult
-        records.append(contentsOf: successfulRecords(result.matchResults))
+        guard let payload = manifest["payload"] as? Data,
+              let keys = try? decoder.decode([String].self, from: payload),
+              !keys.isEmpty else {
+            return [:]
+        }
 
-        while let cursor = result.queryCursor {
-            result = try await database.records(continuingMatchFrom: cursor)
-            records.append(contentsOf: successfulRecords(result.matchResults))
+        let recordIDs = keys.map { cloudRecordID(for: $0) }
+        var records: [CKRecord] = []
+        for recordID in recordIDs {
+            records.append(try await database.record(for: recordID))
         }
 
         return Dictionary(uniqueKeysWithValues: records.compactMap { record in
@@ -293,8 +328,9 @@ final class UniexamCloudSync {
             }
 
             let deletedNumber = record["isDeleted"] as? NSNumber
+            let key = "\(kind.rawValue):\(itemID)"
             let remote = RemoteCloudItem(
-                key: record.recordID.recordName,
+                key: key,
                 kind: kind,
                 itemID: itemID,
                 payload: record["payload"] as? Data,
@@ -306,31 +342,30 @@ final class UniexamCloudSync {
         })
     }
 
-    private func ensureCloudSchema() async throws {
-        let recordID = CKRecord.ID(recordName: "metadata:schema")
+    private func saveManifest(keys: Set<String>) async throws {
+        guard !keys.isEmpty else { return }
+
+        let recordID = CKRecord.ID(recordName: manifestRecordName)
         let record: CKRecord
+        var mergedKeys = keys
 
         do {
             record = try await database.record(for: recordID)
+            if let payload = record["payload"] as? Data,
+               let existingKeys = try? decoder.decode([String].self, from: payload) {
+                mergedKeys.formUnion(existingKeys)
+            }
         } catch let error as CKError where error.code == .unknownItem {
             record = CKRecord(recordType: recordType, recordID: recordID)
         }
 
-        record["kind"] = "schema" as CKRecordValue
-        record["itemID"] = "schema" as CKRecordValue
+        record["payload"] = try encoder.encode(mergedKeys.sorted()) as CKRecordValue
         record["updatedAt"] = Date() as CKRecordValue
-        record["isDeleted"] = false as CKRecordValue
         _ = try await database.save(record)
     }
 
-    private func successfulRecords(
-        _ results: [(CKRecord.ID, Result<CKRecord, any Error>)]
-    ) -> [CKRecord] {
-        results.compactMap { try? $0.1.get() }
-    }
-
     private func save(item: CloudItem, updatedAt: Date) async throws {
-        let recordID = CKRecord.ID(recordName: item.key)
+        let recordID = cloudRecordID(for: item.key)
         let record: CKRecord
 
         do {
@@ -355,7 +390,7 @@ final class UniexamCloudSync {
         }
 
         let itemID = String(key[key.index(after: separator)...])
-        let recordID = CKRecord.ID(recordName: key)
+        let recordID = cloudRecordID(for: key)
         let record: CKRecord
 
         do {
@@ -455,6 +490,10 @@ final class UniexamCloudSync {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
+    private func cloudRecordID(for key: String) -> CKRecord.ID {
+        CKRecord.ID(recordName: recordNamespace + key)
+    }
+
     private func makeSafetyBackupIfNeeded(_ snapshot: UniexamCloudSnapshot) {
         let defaults = UserDefaults.standard
         guard defaults.data(forKey: backupKey) == nil,
@@ -509,6 +548,16 @@ final class UniexamCloudSync {
         return merged
     }
 
+    private func publishFallbackSnapshot(_ snapshot: UniexamCloudSnapshot) {
+        guard let data = try? encoder.encode(snapshot), data.count < 900_000 else {
+            return
+        }
+
+        let store = NSUbiquitousKeyValueStore.default
+        store.set(data, forKey: legacySnapshotKey)
+        store.synchronize()
+    }
+
     private func loadMetadata() -> CloudSyncMetadata {
         guard let data = UserDefaults.standard.data(forKey: metadataKey),
               let metadata = try? decoder.decode(CloudSyncMetadata.self, from: data) else {
@@ -520,6 +569,10 @@ final class UniexamCloudSync {
     private func saveMetadata(_ metadata: CloudSyncMetadata) {
         guard let data = try? encoder.encode(metadata) else { return }
         UserDefaults.standard.set(data, forKey: metadataKey)
+    }
+
+    private func saveDiagnostic(_ message: String) {
+        UserDefaults.standard.set(message, forKey: diagnosticKey)
     }
 
     private func isCloudUnavailable(_ error: Error) -> Bool {
