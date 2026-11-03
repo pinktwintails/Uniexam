@@ -5,6 +5,7 @@
 //  Created by 岩崎未来 on 2026/07/23.
 //
 
+import Combine
 import SwiftUI
 import UIKit
 
@@ -20,12 +21,23 @@ extension EnvironmentValues {
 }
 
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
+
+    private let cloudRefreshTimer = Timer.publish(
+        every: 60,
+        on: .main,
+        in: .common
+    ).autoconnect()
+
     @State private var universities: [UniversityChoice]
     @State private var mockExamResults: [MockExamResult]
     @State private var customCalendarEvents: [UserCalendarEvent]
     @State private var showingSidebar = false
     @State private var showingHiddenItems = false
     @State private var showingMockExamResults = false
+    @State private var cloudSyncReady = false
+    @State private var lastAppliedCloudPayload: Data?
+    @State private var cloudSyncDebounceTask: Task<Void, Never>?
 
     init() {
         let loadedUniversities = UniversityPersistence.load()
@@ -114,12 +126,35 @@ struct ContentView: View {
         }
         .onChange(of: universities) { _, newValue in
             UniversityPersistence.save(newValue)
+            syncCurrentDataIfReady()
         }
         .onChange(of: mockExamResults) { _, newValue in
             MockExamResultPersistence.save(newValue)
+            syncCurrentDataIfReady()
         }
         .onChange(of: customCalendarEvents) { _, newValue in
             UserCalendarEventPersistence.save(newValue)
+            syncCurrentDataIfReady()
+        }
+        .onAppear {
+            bootstrapCloudSyncIfNeeded()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                refreshCloudData()
+            }
+        }
+        .onReceive(cloudRefreshTimer) { _ in
+            if scenePhase == .active {
+                refreshCloudData()
+            }
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: .uniexamCustomColorsDidChange
+            )
+        ) { _ in
+            syncCurrentDataIfReady()
         }
     }
 
@@ -133,6 +168,58 @@ struct ContentView: View {
         mockExamResults.max { lhs, rhs in
             lhs.date < rhs.date
         }?.deviation
+    }
+
+    private func bootstrapCloudSyncIfNeeded() {
+        guard !cloudSyncReady else { return }
+        cloudSyncReady = true
+        refreshCloudData()
+    }
+
+    private func applyCloudSnapshot(_ snapshot: UniexamCloudSnapshot) {
+        lastAppliedCloudPayload = try? JSONEncoder().encode(snapshot)
+        universities = snapshot.universities
+        mockExamResults = snapshot.mockExamResults
+        customCalendarEvents = snapshot.calendarEvents
+        CustomSchoolColorPersistence.save(snapshot.customColors)
+    }
+
+    private func syncCurrentDataIfReady() {
+        guard cloudSyncReady else { return }
+
+        let snapshot = currentCloudSnapshot()
+        if let payload = try? JSONEncoder().encode(snapshot),
+           payload == lastAppliedCloudPayload {
+            return
+        }
+
+        cloudSyncDebounceTask?.cancel()
+        cloudSyncDebounceTask = Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            if let mergedSnapshot = await UniexamCloudSync.shared.synchronize(snapshot) {
+                applyCloudSnapshot(mergedSnapshot)
+            }
+        }
+    }
+
+    private func refreshCloudData() {
+        guard cloudSyncReady else { return }
+        let snapshot = currentCloudSnapshot()
+        Task {
+            if let mergedSnapshot = await UniexamCloudSync.shared.synchronize(snapshot) {
+                applyCloudSnapshot(mergedSnapshot)
+            }
+        }
+    }
+
+    private func currentCloudSnapshot() -> UniexamCloudSnapshot {
+        UniexamCloudSnapshot.local(
+            universities: universities,
+            mockExamResults: mockExamResults,
+            calendarEvents: customCalendarEvents,
+            customColors: CustomSchoolColorPersistence.load()
+        )
     }
 }
 
@@ -3698,6 +3785,11 @@ struct SchoolColorPicker: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
+        .onReceive(
+            NotificationCenter.default.publisher(for: .uniexamCustomColorsDidChange)
+        ) { _ in
+            customColors = CustomSchoolColorPersistence.load()
+        }
         .confirmationDialog(
             "保存したカスタム色を削除しますか？",
             isPresented: Binding(
@@ -5885,6 +5977,7 @@ enum CustomSchoolColorPersistence {
     static func save(_ colors: [SchoolColor]) {
         guard let data = try? JSONEncoder().encode(colors.filter(\.isCustom)) else { return }
         UserDefaults.standard.set(data, forKey: key)
+        NotificationCenter.default.post(name: .uniexamCustomColorsDidChange, object: nil)
     }
 }
 
